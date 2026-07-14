@@ -36,6 +36,25 @@ no separate "solver file" to keep in sync with the picture.
 Because the same text runs and draws, it stays honest: you can't have a diagram
 that disagrees with the model, because they're the same thing.
 
+### Pathways — composition as a first-class thing
+
+Most stocks-and-flows tools hand you one monolithic model. Strombild makes the
+*composition* of the graph something you can name and switch. A `pathway` lights up
+a chosen subset of edges:
+
+```
+pathway leaky_tub : faucet->tub, tub->drain
+```
+
+The full graph can carry more edges than any one pathway uses; select a pathway and
+only its subset runs — select none and everything does. **Edges carry behavior;
+pathways carry composition.** So alternative regimes live in the *same* source and
+toggle from a dropdown instead of being forked into separate files: a feedback loop
+with vs. without one term, a factory running two competing recipes, a mechanism you
+want to compare against its own absence. It doubles as the honest way to switch off
+part of a model without deleting it — the "what if this pathway weren't here?"
+question, answered by picking a different option rather than editing the source.
+
 ## Two channels: definition and visual
 
 Every line has two optional annotation channels with the same grammar
