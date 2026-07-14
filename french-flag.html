@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The French flag — one gradient, two thresholds, three fates</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper:      #f7f2e6;
+    --paper-deep: #efe7d3;
+    --ink:        #22304a;
+    --ink-soft:   rgba(34, 48, 74, 0.55);
+    --vermilion:  #c8451f;
+    --teal:       #1f7a6d;
+    --water:      #3d7fa6;
+    --gold:       #b98a1d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--paper);
+    background-image:
+      repeating-linear-gradient(0deg,  transparent 0 23px, rgba(34,48,74,0.045) 23px 24px),
+      repeating-linear-gradient(90deg, transparent 0 23px, rgba(34,48,74,0.045) 23px 24px);
+    color: var(--ink);
+    font-family: 'IBM Plex Mono', monospace;
+    padding: 18px 20px 20px;
+    max-width: 920px;
+    margin: 0 auto;
+  }
+  header {
+    display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+    gap: 4px 12px; margin-bottom: 6px; border-bottom: 2px solid var(--ink); padding-bottom: 8px;
+  }
+  h1 { font-family: 'Fraunces', serif; font-weight: 600; font-style: italic; font-size: 22px; }
+  h1 .fig {
+    font-family: 'IBM Plex Mono', monospace; font-style: normal; font-weight: 500; font-size: 11px;
+    letter-spacing: 0.18em; color: var(--vermilion); text-transform: uppercase;
+    margin-right: 10px; vertical-align: 2px;
+  }
+  .equation { font-size: 12px; color: var(--ink-soft); }
+  .equation b { color: var(--teal); font-weight: 500; }
+  .lede { font-size: 12.5px; line-height: 1.55; color: var(--ink-soft); margin: 8px 2px 4px; max-width: 760px; }
+  .lede b { color: var(--ink); font-weight: 500; }
+  #map { width: 100%; height: 360px; display: block; margin-top: 4px; }
+  .panel-label {
+    font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-soft);
+    margin: 8px 2px 2px;
+  }
+  .knob {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    border-top: 1px dashed rgba(34,48,74,0.25); margin-top: 10px; padding-top: 12px;
+  }
+  .knob label { font-size: 11px; letter-spacing: 0.04em; }
+  .knob input[type=range] { width: 320px; accent-color: var(--vermilion); }
+  .readout { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+  .swatch { width: 26px; height: 18px; border: 1.5px solid var(--ink); border-radius: 2px; }
+  .fate-name { font-family: 'Fraunces', serif; font-style: italic; font-size: 16px; }
+  .chips { display: flex; gap: 8px; font-size: 11px; }
+  .chip { padding: 1px 7px; border-radius: 9px; border: 1px solid rgba(34,48,74,0.3); }
+  .chip.on  { background: var(--gold); color: #fff; border-color: var(--gold); }
+  .chip.off { color: var(--ink-soft); }
+  footer { margin-top: 14px; font-size: 11px; color: var(--ink-soft); line-height: 1.5; }
+  code { background: var(--paper-deep); padding: 1px 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1><span class="fig">Strombild · fate scan</span>The French flag</h1>
+    <div class="equation">morphogen → <b>switch A</b> (low) + <b>switch B</b> (high) → blue · white · red</div>
+  </header>
+
+  <p class="lede">
+    One morphogen gradient, read against <b>two thresholds</b>, yields three territories.
+    The model is single-compartment, so position along the gradient is the value of
+    <b>morphogen</b> — swept left to right below. At each level the two switches settle, and
+    their on/off <b>combination</b> is the fate. The band boundaries are placed by the engine's
+    own knife-edge math, not drawn by hand — and note the fourth combination (B on, A off)
+    never appears, the tell that this is <b>one ordered input</b>, not two independent switches.
+  </p>
+
+  <canvas id="map"></canvas>
+
+  <div class="knob">
+    <label>position → morphogen <output id="mOut">45</output></label>
+    <input type="range" id="mSlider" min="0" max="100" step="0.5" value="45">
+    <div class="readout">
+      <div class="swatch" id="fateSwatch"></div>
+      <span class="fate-name" id="fateName">white</span>
+      <span class="chips">
+        <span class="chip" id="chipA">A</span>
+        <span class="chip" id="chipB">B</span>
+      </span>
+    </div>
+  </div>
+
+  <footer>
+    Model: <code>french-flag.strombild</code> · analysis: <code>Strombild.fateScan()</code>.
+    Drag the slider to place a cell along the gradient. Next refinement, now built:
+    <a href="french-flag-bistable.html">the bistable reading →</a> — genuinely switch-like
+    boundaries that snap razor-sharp, and hysteresis (memory).
+  </footer>
+
+<script src="strombild.js"></script>
+<script>
+"use strict";
+(() => {
+const S = window.Strombild;
+
+// Mirrors french-flag.strombild (inlined so this page is a standalone artifact —
+// the canonical source is examples/french-flag.strombild).
+const SRC = `
+node morphogen : range(0, 100), init(45)
+node switchA   : range(0, 10),  init(0) @ bucket(fill = water, threshold = 5)
+node switchB   : range(0, 10),  init(0) @ bucket(fill = water, threshold = 5)
+external source
+external sink
+source -> switchA : hill(of = morphogen, max = 10, k = 30, n = 8)
+source -> switchB : hill(of = morphogen, max = 10, k = 65, n = 8)
+switchA -> sink   : proportional(of = switchA, k = 1)
+switchB -> sink   : proportional(of = switchB, k = 1)
+pathway flag : source->switchA, source->switchB, switchA->sink, switchB->sink
+`;
+
+const C = {
+  paper: "#f7f2e6", paperDeep: "#efe7d3", ink: "#22304a", inkSoft: "rgba(34,48,74,0.55)",
+  vermilion: "#c8451f", teal: "#1f7a6d", water: "#3d7fa6", gold: "#b98a1d",
+  // the three flag bands (muted to sit on paper)
+  blue: "#3d7fa6", white: "#faf7ef", red: "#c8451f",
+};
+
+const { model, errors } = S.parseModel(SRC);
+if (errors.length) { document.body.insertAdjacentHTML("beforeend", "<pre>"+JSON.stringify(errors)+"</pre>"); return; }
+const scan = S.fateScan(model, "morphogen", ["switchA", "switchB"], { samples: 220 });
+
+// classify a column into a flag fate
+function fateOf(onA, onB) {
+  if (!onA && !onB) return { key: "blue",  name: "blue",  color: C.blue };
+  if (onA && !onB)  return { key: "white", name: "white", color: C.white };
+  return { key: "red", name: "red", color: C.red };
+}
+// settled switch levels + on/off at an arbitrary morphogen value (for the slider)
+function readAt(M) {
+  const eng = new S.Engine(model);
+  eng.reset(); eng.state.set("morphogen", M); eng.advance(scan.settle);
+  const a = eng.state.get("switchA"), b = eng.state.get("switchB");
+  return { a, b, onA: a >= scan.lines.switchA, onB: b >= scan.lines.switchB };
+}
+
+const cv = document.getElementById("map");
+const ctx = cv.getContext("2d");
+let W = 0, H = 0;
+const M = { l: 52, r: 18, t: 14, b: 34 };   // plot margins
+
+// geometry of the stacked panels inside the plot box
+function geom() {
+  const x0 = M.l, x1 = W - M.r;
+  const curveTop = M.t, curveH = (H - M.t - M.b) * 0.58;
+  const stripTop = curveTop + curveH + 16, stripH = (H - M.t - M.b) - curveH - 16;
+  return { x0, x1, curveTop, curveH, stripTop, stripH };
+}
+const xOf = (g, M) => g.x0 + (g.x1 - g.x0) * (M - scan.lo) / (scan.hi - scan.lo);
+const yLevel = (g, v) => g.curveTop + g.curveH * (1 - v / 10);   // switch level 0..10
+
+function fit() {
+  const cssW = cv.clientWidth, cssH = cv.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = cssW * dpr; cv.height = cssH * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  W = cssW; H = cssH;
+}
+
+function draw(curM) {
+  fit();
+  ctx.clearRect(0, 0, W, H);
+  const g = geom();
+
+  // --- the flag strip: one fill per scan column -------------------------
+  const n = scan.columns.length;
+  for (let i = 0; i < n; i++) {
+    const c = scan.columns[i];
+    const xA = xOf(g, c.x) - (g.x1 - g.x0) / (2 * n) - 0.5;
+    const w = (g.x1 - g.x0) / n + 1;
+    ctx.fillStyle = fateOf(c.on.switchA, c.on.switchB).color;
+    ctx.fillRect(xA, g.stripTop, w, g.stripH);
+  }
+  ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5;
+  ctx.strokeRect(g.x0, g.stripTop, g.x1 - g.x0, g.stripH);
+
+  // --- switch readout curves + threshold line ---------------------------
+  // threshold (switch line) — both switches share level 5 here
+  const ty = yLevel(g, scan.lines.switchA);
+  ctx.save();
+  ctx.setLineDash([5, 4]); ctx.strokeStyle = C.gold; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(g.x0, ty); ctx.lineTo(g.x1, ty); ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = C.gold; ctx.font = "10px 'IBM Plex Mono', monospace"; ctx.textAlign = "left";
+  ctx.fillText("switch line", g.x0 + 4, ty - 4);
+
+  const drawCurve = (key, color) => {
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
+    scan.columns.forEach((c, i) => {
+      const x = xOf(g, c.x), y = yLevel(g, c.levels[key]);
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    });
+    ctx.stroke();
+  };
+  drawCurve("switchA", C.teal);
+  drawCurve("switchB", C.vermilion);
+
+  // curve labels
+  ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.textAlign = "left";
+  ctx.fillStyle = C.teal;      ctx.fillText("switch A", g.x0 + 6, g.curveTop + 12);
+  ctx.fillStyle = C.vermilion; ctx.fillText("switch B", g.x0 + 6, g.curveTop + 26);
+
+  // --- boundary verticals (the knife-edges) -----------------------------
+  ctx.textAlign = "center";
+  for (const [key, bx] of Object.entries(scan.boundaries)) {
+    if (bx == null) continue;
+    const x = xOf(g, bx);
+    ctx.save();
+    ctx.setLineDash([3, 3]); ctx.strokeStyle = "rgba(34,48,74,0.45)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, g.curveTop); ctx.lineTo(x, g.stripTop + g.stripH); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = C.inkSoft; ctx.font = "9px 'IBM Plex Mono', monospace";
+    ctx.fillText("M=" + bx.toFixed(0), x, g.stripTop + g.stripH + 13);
+  }
+
+  // --- x axis (morphogen) ----------------------------------------------
+  ctx.strokeStyle = "rgba(34,48,74,0.3)"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(g.x0, g.stripTop + g.stripH); ctx.lineTo(g.x1, g.stripTop + g.stripH); ctx.stroke();
+  ctx.fillStyle = C.inkSoft; ctx.font = "10px 'IBM Plex Mono', monospace"; ctx.textAlign = "center";
+  for (let m = 0; m <= 100; m += 25) ctx.fillText(String(m), xOf(g, m), g.stripTop + g.stripH + 26);
+  ctx.save(); ctx.translate(14, (g.curveTop + g.stripTop + g.stripH) / 2); ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = C.inkSoft; ctx.fillText("morphogen concentration  →", 0, 0); ctx.restore();
+
+  // band names on the strip
+  ctx.font = "italic 13px 'Fraunces', serif"; ctx.textAlign = "center";
+  const mid = (lo, hi) => xOf(g, (lo + hi) / 2);
+  const bA = scan.boundaries.switchA ?? 0, bB = scan.boundaries.switchB ?? 100;
+  ctx.fillStyle = "rgba(255,255,255,0.92)"; ctx.fillText("blue",  mid(scan.lo, bA), g.stripTop + g.stripH / 2 + 4);
+  ctx.fillStyle = C.ink;                    ctx.fillText("white", mid(bA, bB),       g.stripTop + g.stripH / 2 + 4);
+  ctx.fillStyle = "rgba(255,255,255,0.95)"; ctx.fillText("red",   mid(bB, scan.hi),  g.stripTop + g.stripH / 2 + 4);
+
+  // --- the live position marker (the slider) ----------------------------
+  const mx = xOf(g, curM);
+  ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(mx, g.curveTop - 4); ctx.lineTo(mx, g.stripTop + g.stripH); ctx.stroke();
+  const r = readAt(curM);
+  for (const [key, on] of [["switchA", r.onA], ["switchB", r.onB]]) {
+    const y = yLevel(g, key === "switchA" ? r.a : r.b);
+    ctx.beginPath(); ctx.arc(mx, y, 4, 0, 7); ctx.fillStyle = on ? C.gold : C.paper;
+    ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+  // marker cap triangle
+  ctx.fillStyle = C.ink; ctx.beginPath();
+  ctx.moveTo(mx, g.curveTop - 4); ctx.lineTo(mx - 4, g.curveTop - 11); ctx.lineTo(mx + 4, g.curveTop - 11);
+  ctx.closePath(); ctx.fill();
+}
+
+// --- slider wiring ------------------------------------------------------
+const slider = document.getElementById("mSlider");
+const mOut = document.getElementById("mOut");
+const fateName = document.getElementById("fateName");
+const fateSwatch = document.getElementById("fateSwatch");
+const chipA = document.getElementById("chipA"), chipB = document.getElementById("chipB");
+
+function update() {
+  const m = parseFloat(slider.value);
+  mOut.textContent = m.toFixed(0);
+  const r = readAt(m);
+  const fate = fateOf(r.onA, r.onB);
+  fateName.textContent = fate.name;
+  fateSwatch.style.background = fate.color;
+  chipA.className = "chip " + (r.onA ? "on" : "off");
+  chipB.className = "chip " + (r.onB ? "on" : "off");
+  draw(m);
+}
+
+slider.addEventListener("input", update);
+window.addEventListener("resize", update);
+window.addEventListener("load", update);
+update();
+})();
+</script>
+</body>
+</html>

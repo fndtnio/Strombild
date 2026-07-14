@@ -1,0 +1,35 @@
+# cytokine — inflammation (the response amplifies itself)
+#
+# the new mechanism, the one the first two models don't have: POSITIVE FEEDBACK.
+# cytokines recruit immune cells, which release more cytokines. that is the cafe's
+# self-reference — a flow INTO inflammation whose rate reads inflammation — and it
+# turns a graded response into a switch with a threshold and HYSTERESIS.
+#
+# two inflows feed inflammation:
+#   insult -> inflammation : reads pathogens   — the trigger (dial it)
+#   tissue -> inflammation : reads inflammation — the self-amplification (cafe)
+# and one outflow resolves it (anti-inflammatory clearance).
+#
+# because the response amplifies itself, the trigger to switch ON is HIGHER than
+# the trigger to switch OFF, so the two branches differ (verified):
+#   pathogen < ~12   -> resolves either way        (acute: returns to baseline)
+#   pathogen > ~42   -> full inflammation either way
+#   ~12 < pathogen < ~42 -> depends on HISTORY: a calm body stays calm, but an
+#                            already-inflamed body STAYS inflamed
+# that gap is why inflammation overshoots and can become CHRONIC: it ignites at
+# ~42 but won't quit until the trigger falls below ~12, long after it lit.
+#
+# default below is a naive body hit with a big insult (pathogens 50) -> it ignites.
+# drop pathogens into 12..42 and inflammation now depends on where you started:
+# init inflammation at 0 (calm) vs 50 (primed) gives the two branches.
+node inflammation : range(0, 50), init(0)   @ bucket(fill = dots)
+node pathogens    : range(0, 100), init(50)            # the trigger — held, only read
+external tissue                                         # resident cells (the amplifier)
+external insult                                         # pathogen-driven kick
+external resolve                                        # anti-inflammatory clearance
+
+insult       -> inflammation : proportional(of = pathogens, k = 0.05)           # trigger
+tissue       -> inflammation : hill(of = inflammation, max = 8, k = 25, n = 4)  # self-amplification
+inflammation -> resolve      : proportional(of = inflammation, k = 0.2)         # resolution
+
+pathway inflame : insult->inflammation, tissue->inflammation, inflammation->resolve

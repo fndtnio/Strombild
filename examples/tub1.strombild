@@ -1,0 +1,10 @@
+# tub linear
+
+node tub : range(0, 50) @ bucket
+faucet -> tub  : constant(c = 3) @ pipe
+tub   -> drain : constant(c = 0.1) @ pipe
+
+faucet -> tub    : constant(c = 3)
+tub   -> drain : constant(c = 0.1)
+
+pathway leaky_tub : faucet->tub, tub->drain

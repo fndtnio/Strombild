@@ -1,0 +1,25 @@
+# cytokine — the innate first response to a held infection
+#
+# we model ONLY the cytokine response here; the infection itself is a fixed dose.
+# pathogens is a HELD node (no flow touches it, so it sits at its level) that the
+# production flow only *reads* — the same trick as french-flag's morphogen.
+# it must be a node, not an external: an external read by `of` evaluates to 0,
+# so production would never start.
+#
+# why production reads pathogens (proportional) instead of constant(c):
+#   it records the causation. no infection, no response — set pathogens to 0 and
+#   cytokines fall to 0. a constant would pump cytokines into a healthy body.
+# why cytokines aren't made *from* pathogens:
+#   cytokines are not pathogen mass, so the material comes from an external
+#   `cells` source; pathogens only *set the rate*, it isn't converted.
+#
+# settles at steady state: cytokines = (k_make * pathogens) / k_clear = 13.3
+node pathogens : range(0, 2000), init(1000)         # the dose — held, only read
+node cytokines : range(0, 50),   init(0)   @ bucket
+external cells                                       # immune cells secreting cytokine
+external diffusion                                   # clearance / wash-out
+
+cells     -> cytokines : proportional(of = pathogens, k = 0.004)   # production tracks load
+cytokines -> diffusion : proportional(of = cytokines, k = 0.3)     # cleared faster the fuller it is
+
+pathway pathogen_response : cells->cytokines, cytokines->diffusion

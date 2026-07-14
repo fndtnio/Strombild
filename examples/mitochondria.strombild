@@ -1,0 +1,40 @@
+# mitochondria — a producer, a queue, and a consumer (the book's own words)
+#
+# The mitochondrion's prose is already stocks-and-flows: "we have a producer, a
+# queue and a consumer," and "the gradient is a buffer — a way of storing and
+# metering energy output." So model it as exactly that, nothing invented:
+#
+#   producer  the electron transport chain (etc) pumps protons across the inner
+#             membrane. Powered by NADH + O2; here it is a steady inflow.
+#   queue     the reservoir — protons piled up on one side. THE BUFFER. This is
+#             the dam: it stores energy and meters how fast it is spent.
+#   consumer  ATP synthase. Protons flow back down the gradient THROUGH it, and
+#             that flux spins a rotor (@ rotor — RPM tracks the live proton flow).
+#             The spin charges ADP + Pi into ATP; the cell spends the ATP on work.
+#
+# The synthesis edge (adp -> atp) is FED by ADP but its RATE reads the reservoir
+# (of = reservoir): the gradient meters ATP output without itself being the
+# substrate — drawn as a dashed influence arrow from the dam to the synthesis,
+# the same read-not-drain move as café's self-activation and french-flag's
+# morphogen. Only the rotor drains the dam; synthesis is governed by it.
+#
+# Watch it settle: the pump fills the dam, the rotor spins at the equilibrium
+# flux, ATP fills to its steady shelf. Throttle the pump (drop etc's c) and the
+# rotor visibly slows — the buffer/metering story, drawn by the math.
+#
+# This is the model that forced the `rotor` edge visual: a flux you read as
+# rotation. It generalises — the flagellar motor, a turbine, any flux-as-spin.
+
+node reservoir : range(0, 100), init(12) @ bucket(fill = dots)    # the dam — protons stored across the membrane
+node atp       : range(0, 100), init(0)  @ bucket(fill = dots)    # the refined energy token
+external etc        # electron transport chain — the pump (NADH + O2 drive it)
+external matrix     # protons return here, down the gradient
+external adp        # ADP + Pi — the empty tokens waiting to be charged
+external work       # everything the cell does, paid for in ATP
+
+etc       -> reservoir : constant(c = 8)                                 # the pump fills the dam
+reservoir -> matrix    : proportional(of = reservoir, k = 0.35) @ rotor  # ATP synthase: the flux spins the rotor
+adp       -> atp       : proportional(of = reservoir, k = 0.18)          # the spin charges ADP + Pi -> ATP
+atp       -> work      : proportional(k = 0.15)                          # the cell spends it
+
+pathway respiration : etc->reservoir, reservoir->matrix, adp->atp, atp->work

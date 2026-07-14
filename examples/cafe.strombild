@@ -1,0 +1,11 @@
+# cafe — bistable: people draw people
+# crowd starts at init(30), above the knife-edge (~24): run and it fills to packed.
+# change init to 10 (below the edge) and it drains to empty instead. one model, two fates.
+node crowd : range(0, 50), init(30) @ bucket(fill = dots)
+external street
+external exit
+
+street -> crowd : hill(of = crowd, max = 8, k = 25, n = 4)
+crowd  -> exit  : proportional(of = crowd, k = 0.15)
+
+pathway cafe : street->crowd, crowd->exit

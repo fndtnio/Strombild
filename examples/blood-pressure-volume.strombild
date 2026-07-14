@@ -1,0 +1,43 @@
+# blood pressure, the SLOW loop — where volume sets the baseline
+#
+# `blood-pressure.strombild` is the FAST loop: the baroreflex, defending pressure
+# over seconds by speeding or slowing the pulse (you stand up, it catches you).
+# But that loop can't set your baseline pressure over a lifetime — the KIDNEY does,
+# by controlling how much fluid is in you. This is that slow loop, and it makes
+# VOLUME the thing you can see and push on.
+#
+# The chain, honest and minimal:
+#   • more blood/fluid VOLUME  ->  the heart fills more and pumps harder
+#     (Frank-Starling: a fuller heart throws a bigger stroke)  ->  higher PRESSURE
+#   • blood circulates (pressure runs off back into the venous reservoir — conserved)
+#   • the KIDNEY reads the pressure and excretes salt & water to match it
+#     (pressure-natriuresis: higher pressure -> more pee). That dashed arrow from
+#     pressure onto the kidney's drain is the negative feedback that holds it all:
+#     volume up -> pressure up -> kidney dumps volume -> pressure back down.
+#
+# It settles where intake balances excretion — about 90 mmHg here (a textbook mean).
+# Now the point of the whole exercise, the experiments YOU can run on the source:
+#   • raise `intake` (eat more salt) — volume climbs, pressure climbs. Salt-sensitive
+#     hypertension, emergent, not assumed.
+#   • drop the kidney's k (a failing kidney excretes less at any pressure) — pressure
+#     climbs to compensate. Renal hypertension.
+#   • drop `intake` (dehydration, blood loss) — volume and pressure fall together.
+#
+# THE GAP this node exposed (the honest one): cardiac output is really heart-rate x
+# stroke-volume — the fast loop's pulse TIMES this loop's filling. To run BOTH loops
+# at once, one flow's rate would have to be a PRODUCT of two nodes, and Strombild's
+# rate laws each read only one (`of`). So the fast and slow loops live in two files
+# for now; fusing them wants a new multiplicative rate law. That's the next gap.
+
+node volume   : range(0, 120), init(40) @ bucket(fill = water)   # blood & extracellular fluid — the reservoir
+node pressure : range(0, 220), init(60) @ bucket(fill = water)   # arterial pressure, mmHg
+
+external intake   # salt & water in (diet, drinking)
+external kidney   # salt & water out (urine)
+
+intake   -> volume   : constant(c = 1.0)                       # fluid intake — raise it to eat more salt
+volume   -> pressure : proportional(of = volume, k = 0.25)     # cardiac output rises with filling (Frank-Starling)
+pressure -> volume   : proportional(of = pressure, k = 0.12)   # runoff returns to the reservoir — circulation is conserved
+volume   -> kidney   : proportional(of = pressure, k = 0.011)  # pressure-natriuresis: higher pressure, more excretion
+
+pathway body : intake->volume, volume->pressure, pressure->volume, volume->kidney

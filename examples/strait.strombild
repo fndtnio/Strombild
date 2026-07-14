@@ -1,0 +1,20 @@
+# strait — soft backpressure. The first model where a flow looks at where it's
+# GOING, not just where it comes from.
+#
+# Ships pour in from world trade and queue at the port. They may only enter the
+# strait as fast as it has room: `gated` throttles the entry flow by the strait's
+# headroom, so when the strait is congested the queue backs up in the *port*
+# instead of ships vanishing at a full edge (which a plain range-clamp would do).
+#
+# Arrivals (2) outpace the strait's clearing, so the strait jams near capacity and
+# the port fills behind it. Widen the clearing rate (strait -> sea) and it drains.
+node port   : range(0, 400), init(0) @ box(fill = dots)   # ships waiting to transit
+node strait : range(0, 12),  init(0) @ box(fill = dots)   # ships in the strait (capacity 12)
+external ocean                                            # world trade, upstream
+external sea                                              # open water, past the strait
+
+ocean  -> port   : constant(c = 2)             # steady arrivals
+port   -> strait : gated(k = 1.5)              # entry throttled as the strait fills (backpressure)
+strait -> sea    : proportional(k = 0.15)      # clearing — the bottleneck
+
+pathway transit : ocean->port, port->strait, strait->sea

@@ -1,0 +1,53 @@
+# cell fate — rest, ride, or die (CDK collapsed to a single stock)
+#
+# the whole cell-cycle clock (cyclin/MPF/APC, cell-cycle.strombild) is collapsed
+# into ONE stock here: cdk = "how hard the cell is pushing to divide." we don't
+# re-model the oscillator; we step up an altitude and ask the cell's three fates:
+#
+#   REST  — neither threshold reached. no event fires. the cell just chills.
+#   RIDE  — cdk crosses the mitosis line: the divide event fires, cdk resets, the
+#           cell divides. a FORK — it can climb and divide again.
+#   DIE   — damage drives apoptosis past its line: the die event fires. TERMINAL.
+#
+# the fork that makes it "ride OR die": damage does two things at once (p53's
+# dual job). it BRAKES cdk (the checkpoint — `cdk -> arrest` reads damage) AND it
+# drives apoptosis (`apop_off -> apoptosis` reads damage, switch-like via hill).
+# so a damaged cell divides slower, which buys apoptosis time to win the race.
+# the checkpoint is not hand-coded — it emerges from the two couplings.
+#
+# the story in ONE run: mitogens drive a happy dividing cell, but each division
+# adds a little replication damage (`divide` writes damage += ...). repair can't
+# keep up, damage ratchets, p53 commits, and the cell dies. ride, ride, ... die.
+
+node cdk        : range(0, 12), init(0) @ bucket(fill = dots, threshold = 10)   # push-to-divide; mitosis line at 10
+node damage     : range(0, 12), init(0) @ bucket(fill = dots)                   # DNA damage / replication stress
+node apoptosis  : range(0, 12), init(0) @ bucket(fill = dots, threshold = 8)    # p53 death commitment; point of no return at 8
+node divisions  : range(0, 40), init(0) @ box(fill = squares)                   # one square per completed division
+node dead       : range(0, 1),  init(0) @ box                                   # 1 once the cell has died (terminal)
+
+external mitogens   # growth/nutrient signal — its strength is the constant drive below
+external turnover   # basal CDK degradation sink
+external arrest     # CDK removed by the damage checkpoint (p21/p53)
+external repaired   # repaired damage leaves here
+external p53_off    # inactive p53/apoptosis pool
+
+mitogens  -> cdk        : constant(c = 2.6)                          # GO: mitogen drive (raise to ride, lower to rest)
+cdk       -> turnover   : proportional(of = cdk,    k = 0.15)        # basal turnover — makes REST a real equilibrium
+cdk       -> arrest     : proportional(of = damage, k = 0.30)        # STOP: damage brakes cdk  ← the checkpoint
+
+# damage's only source is the wear of dividing (the divide event below writes it);
+# repair is a SLOW leak, so damage ratchets up faster than it is cleared.
+damage    -> repaired   : proportional(of = damage, k = 0.015)       # slow repair
+
+p53_off   -> apoptosis  : hill(of = damage, max = 2.4, k = 3, n = 8) # p53 commits past ~3 damage — switch-like
+apoptosis -> p53_off    : proportional(of = apoptosis, k = 0.18)     # commitment relaxes if damage falls back
+
+# RIDE: cross the mitosis line — divide, reset cdk, count it, and pay a little
+# replication damage. that damage += is what eventually tips the cell toward death.
+# the `& dead == 0` clause is the TERMINAL guard: a dead cell cannot divide.
+event divide : cdk >= 10 & dead == 0 : cdk = 0, divisions += 1, damage += 0.7
+
+# DIE: cross the point of no return — the cell is dead. `& dead == 0` makes this
+# fire exactly once; after it latches dead = 1, no event can fire again. the cell
+# is truly done — the simulation, for this cell, has ended.
+event die : apoptosis >= 8 & dead == 0 : dead = 1, cdk = 0

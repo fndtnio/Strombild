@@ -1,0 +1,22 @@
+# Savings vs Debt — one tick = one month.
+# Income builds cash; a fixed payment both drains cash and pays down debt,
+# while interest keeps inflating the balance. Debt falls only 
+# outruns the interest — start below ~67 and you escape, above it you 
+node cash  : range(0, 1000), init(0)  @ bucket
+node debt  : range(0, 500),  init(50) @ bucket
+
+node owing : range(0, 1),    init(1)  @ box(threshold = 0.5) # 1 while you still owe; the event clears it
+
+
+external income     # paycheck in
+external interest   # accruing interest (inflates the balance)
+external lender     # payments out / debt extinguished
+
+income   -> cash   : constant(c = 2)                     # monthly take-home
+cash     -> lender : proportional(of = owing, k = 1.2)   # pay 1.2 — but only while owing
+interest -> debt   : proportional(of = debt, k = 0.018)  # 22% APR, compounding monthly
+debt     -> lender : proportional(of = owing, k = 1.2)   # ...cancelling that much debt
+
+event done : debt <= 0 : owing = 0                       # debt cleared -> stop paying
+
+pathway payoff : income->cash, cash->lender, interest->debt, debt->lender

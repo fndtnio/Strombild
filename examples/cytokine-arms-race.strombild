@@ -1,0 +1,27 @@
+# cytokine — the arms race (pathogens promoted from held dose to living population)
+#
+# the single-cell-to-population upgrade: pathogens is now a real `node`. it
+# replicates (a flow INTO it that reads itself = exponential growth) and is
+# killed by the response. the causation that cytokine.strombild only *recorded*
+# now goes LIVE: load drives cytokines, cytokines drive killing, killing knocks
+# load back down.
+#
+# killing SATURATES (hill): the innate response has a finite capacity, so a big
+# enough infection outruns it. that gives a tipping point, just like the cafe —
+#   small dose  (init <= ~13)  -> cleared      (pathogens -> 0)
+#   large dose  (init >= ~14)  -> overwhelmed  (pathogens pinned at the cap)
+# one model, two fates, set by the initial dose. flip init across the edge to flip
+# the outcome (knifeEdge(model, "pathogens") names the line, as in the cafe/debt).
+node pathogens : range(0, 3000), init(10)  @ bucket(fill = dots)
+node cytokines : range(0, 50),   init(0)   @ bucket
+external broth                                       # nutrients the infection grows on
+external plasma                                      # source of cytokine protein
+external cleared                                     # cytokine wash-out
+external killed                                      # dead pathogens
+
+broth     -> pathogens : proportional(of = pathogens, k = 0.15)        # replication
+plasma    -> cytokines : proportional(of = pathogens, k = 0.3)         # response tracks load
+cytokines -> cleared   : proportional(of = cytokines, k = 0.3)         # clearance
+pathogens -> killed    : hill(of = cytokines, max = 4, k = 10, n = 1)  # killing, saturating
+
+pathway infection : broth->pathogens, plasma->cytokines, cytokines->cleared, pathogens->killed

@@ -1,0 +1,41 @@
+# blood pressure — a setpoint the body HOLDS, not a number it has
+#
+# Blood pressure isn't a fixed value you own; it's a value your body defends,
+# actively, against everything trying to move it. Model it as one stock — the
+# pressure in your arteries — and the loop that holds it steady.
+#
+# Two flows move the pressure:
+#   • the heart pumps blood IN (cardiac output) — a faster pulse pumps harder
+#   • it runs OFF into the body through the arterioles — higher pressure drains faster
+# Left alone those two settle wherever they happen to balance. But the body has a
+# target — mean arterial pressure, about 93 mmHg for a textbook 120/80 — and a sensor
+# that steers toward it:
+#
+#   • the baroreflex: nerves read the pressure and ADJUST the pulse to defend it.
+#     Pressure falls, the pulse speeds up to pump it back; pressure rises, the pulse
+#     eases off. (adjust is a negative-feedback controller: k · (target − pressure).)
+#
+# That dashed loop — pressure sensed → pulse adjusted → pressure changed — is the
+# whole point. It's not one edge, it's a system with a feedback loop. Run it starting
+# LOW (like standing up too fast): the pulse spikes to catch the falling pressure,
+# then relaxes as the pressure climbs back to ~93 and holds there.
+#
+# This is the FAST loop (seconds): the baroreflex, on the pulse. The SLOW loop —
+# where blood VOLUME and the kidney set the baseline over hours — lives in its
+# companion, blood-pressure-volume.strombild. They're the same system on two clocks;
+# uniting them in one model wants a cardiac output = heart-rate x stroke-volume, a
+# PRODUCT of two nodes that Strombild's one-`of` rate laws can't yet write (the gap).
+# Still baked-in here: vascular RESISTANCE (hidden in the runoff constant k).
+
+node pressure : range(0, 200), init(65) @ bucket(fill = water)   # arterial pressure, mmHg
+node pulse    : range(0, 200), init(60) @ bucket(fill = dots)    # heart rate — the reflex's effector
+
+external heart    # the pump: cardiac output enters the arteries here
+external body     # the capillary bed the blood runs off into
+external nerves   # the autonomic boundary — the baroreflex sits at the edge of the model
+
+heart    -> pressure : proportional(of = pulse, k = 0.13)            # cardiac output: pump rate rides on the pulse
+pressure -> body     : proportional(of = pressure, k = 0.1)          # runoff through the arterioles (resistance baked into k)
+nerves   -> pulse    : adjust(of = pressure, target = 93, k = 0.03)  # the baroreflex — hold pressure at its setpoint
+
+pathway resting : heart->pressure, pressure->body, nerves->pulse

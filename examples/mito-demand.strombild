@@ -1,0 +1,50 @@
+# mito-demand — the motor needs BOTH (mito-queue's real lesson)
+#
+# mito-fuel put glucose on the front, but its pump→reservoir→ATP was a straight
+# line: more fuel, more output, always. The real machine has a second demand.
+# ATP synthase is a TWO-substrate motor: it needs a proton from the gradient AND
+# an ADP to charge. Flood it with protons but starve it of ADP and it stalls just
+# as dead as if the gradient were flat. That is an AND-gate, and an AND-gate is
+# the one thing a single edge cannot say — an edge reads one node. So the motor
+# is a `reaction`, reading BOTH its inputs at once, drawn as one spinning hub:
+#
+#     reservoir + adp -> atp : limiting(k) @ rotor
+#
+# `limiting` is the bottleneck: the wheel turns at the pace of the SCARCER feed
+# (k · min(protons, adp)). Either input dry → min → 0 → the motor stops.
+#
+# Two dials feed the motor's two sides:
+#   glucose  sets the proton pump        (etc  -> reservoir)   — the gradient side
+#   demand   refills the ADP queue       (load -> adp)         — the substrate side
+# ADP and ATP are the cell's energy tokens: the motor charges adp→atp, and the
+# cell's WORK spends atp and hands the empty token back (so `demand` — how hard
+# the cell is working — is exactly the rate ADP is regenerated). More demand,
+# more empty tokens waiting; cut demand and the ADP queue starves the motor even
+# with a brim-full dam. (We supply ADP from an external `load` rather than a
+# strictly conserved atp↔adp loop — the same simplification mito-queue makes —
+# so an empty pool can't mint tokens from nothing.)
+#
+# The four corners (mito-queue's note, now falling out of the math):
+#   fuel high, demand zero  → ADP queue empties → motor stalls, the dam floods to 100
+#   demand high, fuel zero  → dam drains → motor stalls, ADP piles up
+#   both high               → the wheel runs flat out, limited by whichever you pinch
+#   both low                → it idles
+#
+# THIS is the model that forced `@ rotor` onto a reaction: a hub where two feeds
+# converge and one product leaves, spinning at the shared rate.
+
+node glucose   : range(0, 100), init(60)                         # the fuel dial — the proton pump
+node demand    : range(0, 100), init(60)                         # the demand dial — how hard the cell works
+node reservoir : range(0, 100), init(15) @ bucket(fill = dots)   # the proton dam — the gradient
+node adp       : range(0, 100), init(40) @ bucket(fill = dots)   # the ADP queue — empty tokens
+node atp       : range(0, 100), init(10) @ bucket(fill = dots)   # ATP — charged tokens
+external etc        # electron transport chain — the pump (glucose-derived carriers drive it)
+external load       # the cell's work, handing back spent tokens as ADP
+external work       # charged ATP, spent
+
+etc  -> reservoir : proportional(of = glucose, k = 0.10)         # pump rate SET by glucose
+load -> adp       : proportional(of = demand,  k = 0.10)         # demand refills the ADP queue (matched to the pump)
+atp  -> work      : proportional(k = 0.15)                       # ATP spent (of defaults to atp — only what you have)
+
+# the motor: one proton + one ADP -> one ATP, at the pace of the scarcer feed.
+pathway motor : reservoir + adp -> atp : limiting(k = 0.4) @ rotor

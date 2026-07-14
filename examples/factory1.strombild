@@ -1,0 +1,21 @@
+# factory1 — two suppliers feeding one factory (the assembly line)
+# supplyA fills slowly (1/t), supplyB fast (3/t). the factory's RECIPE consumes
+# one of each to make one unit of output. the recipe lives on the pathway, not on
+# the edges — because its rate must read BOTH inputs at once, and an edge sees
+# only one node. this is the first thing edges cannot express: a reaction.
+#
+# watch the bottleneck: the line runs only as fast as the SCARCER input
+# (limiting). A is the slow supplier, so it rate-limits the factory at ~1/t —
+# and B's bucket fills to the brim, the excess no recipe can keep up with.
+node supplyA : range(0, 50), init(0) @ bucket(fill = water)   # raw material: fluid
+node supplyB : range(0, 50), init(0) @ bucket(fill = water)
+node factory : range(0, 50), init(0) @ box(fill = squares)    # finished units: a crate
+
+external sourceA
+external sourceB
+
+sourceA -> supplyA : constant(c = 1)   # slow supplier: 1 unit / t
+sourceB -> supplyB : constant(c = 3)   # fast supplier: 3 units / t
+
+# the recipe: 1 A + 1 B -> 1 output, as fast as the scarcer input allows
+pathway assemble : supplyA + supplyB -> factory : limiting(k = 0.5)

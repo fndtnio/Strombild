@@ -1,0 +1,11 @@
+node cash : range(0, 1000), init(0)
+node debt : range(0, 500),  init(50)
+
+external income
+external interest
+external settled            # declare it to silence the "implicit external" warning
+
+income   -> cash : constant(c = 2)
+interest -> debt : proportional(of = debt, k = 0.018)   # interest still grows the balance
+
+pathway pay : cash + debt -> settled : limiting(k = 0.12)   # spend cash against the balance

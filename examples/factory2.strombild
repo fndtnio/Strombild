@@ -1,0 +1,23 @@
+# factory2 — one factory, two products, two recipes competing for shared stock
+# same two suppliers as factory1, but now the factory knows TWO recipes, each its
+# own pathway. pick one in the dropdown to make only that product; choose "all
+# edges" and BOTH recipes run at once, drawing on the same A and B — they compete.
+# competition is the usual ground truth: nothing makes one product in isolation.
+#
+# widget is a lean 1:1 recipe. gadget is greedier — it needs 2 A per unit — so
+# when both run they pull A down together and the scarce supplier throttles the
+# pair. change the k's or the coefficients and the product mix shifts.
+node supplyA : range(0, 50), init(0) @ bucket(fill = water)   # raw material: fluid
+node supplyB : range(0, 50), init(0) @ bucket(fill = water)
+node widget  : range(0, 50), init(0) @ box(fill = squares)    # finished units: a crate
+node gadget  : range(0, 50), init(0) @ box(fill = squares)
+
+external sourceA
+external sourceB
+
+sourceA -> supplyA : constant(c = 1)
+sourceB -> supplyB : constant(c = 3)
+
+# two recipes drawing on the same A and B:
+pathway make_widget : supplyA + supplyB -> widget : limiting(k = 0.5)
+pathway make_gadget : 2 supplyA + supplyB -> gadget : limiting(k = 0.5)

@@ -1,0 +1,25 @@
+# factory3 — the truck: widgets accumulate, then ship in one discrete batch
+# the suppliers + reaction are factory1, unchanged. what's new is the last line:
+# an EVENT. a flow can only ooze (state += rate * dt); shipping a truck can't be
+# oozed — you don't send 0.3 of a truck. it's all-at-once: wait until the load is
+# full, then BOOM, the truck leaves and the count of delivered units jumps.
+#
+# watch `widget`: it sawtooths — fill to 20, snap back to 0, fill again. and
+# `shipped` (which nothing flows into — only the event touches it) staircases up
+# by 20 each time a truck departs. that snap-and-reset is what no edge can express.
+node supplyA : range(0, 50),  init(0) @ bucket(fill = water)   # raw material: fluid
+node supplyB : range(0, 50),  init(0) @ bucket(fill = water)
+node widget  : range(0, 50),  init(0) @ box(fill = squares)    # the loading dock
+node shipped : range(0, 200), init(0) @ box(fill = squares)    # delivered, cumulative
+
+external sourceA
+external sourceB
+
+sourceA -> supplyA : constant(c = 1)
+sourceB -> supplyB : constant(c = 3)
+
+pathway assemble : supplyA + supplyB -> widget : limiting(k = 0.5)
+
+# a full truckload is 20 units. when the dock reaches it, ship: clear the dock,
+# add 20 to the delivered total.
+event ship : widget >= 20 : widget = 0, shipped += 20

@@ -1,0 +1,13 @@
+# tub — the real leak (ODE)
+# the drain reads the tub's OWN level: fuller -> more pressure -> leaks faster.
+# that single `proportional` (instead of a flat constant) is what turns arithmetic
+# into an ODE. it starts empty, fills, and settles where inflow balances outflow:
+# 3 / 0.1 = 30 — a level nobody wrote down; it emerges from the balance.
+node tub : range(0, 50) @ bucket
+external faucet
+external drain
+
+faucet -> tub  : constant(c = 3)
+tub -> drain   : proportional(k = 0.1)      # 'of' defaults to the source (tub)
+
+pathway leaky_tub : faucet->tub, tub->drain

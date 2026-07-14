@@ -1,0 +1,46 @@
+# mito-fuel — turn the glucose dial, watch the cascade (after mito-queue.html)
+#
+# mitochondria.strombild starts the proton story mid-stream, with the pump as a
+# fixed inflow. But the pump is not fixed — it runs on glucose. This model puts
+# the fuel dial back on the front and lets you watch one knob ripple down a chain
+# of THREE stocks:
+#
+#     glucose  ──sets──>  the pump  ──fills──>  reservoir  ──drives──>  ATP
+#     (the dial)                                (the reserve)           (production)
+#
+# glucose is a HELD node (no flow in or out — like french-flag's morphogen): it
+# just sits at its level and is READ by the pump (of = glucose). Lower its init
+# (or drag the dial) and the whole downstream chain re-settles lower — the pump
+# slows, the reservoir reserve falls, ATP production falls with it. That is the
+# point the book makes: glucose is the crude input; the gradient is a BUFFER that
+# stores and meters it; ATP is the refined token. The reservoir cushions a brief
+# glucose dip, but a sustained one starves production — you can read that lag in
+# how the dam empties before the ATP bucket does.
+#
+# Two dashed influence arrows draw the causal chain: glucose governs the pump,
+# the reservoir governs synthesis (read-not-drain, the café/french-flag move).
+# Only the rotor drains the dam.
+#
+#   try it: init(glucose) = 70 → reservoir ~20, ATP ~24.  drop to 30 → reservoir
+#   ~8.6, ATP ~10 — half the fuel, roughly half the reserve and half the output.
+#
+# THE NEXT GAP (mito-queue's real lesson): there, the motor needs BOTH the
+# gradient AND ADP demand — production = gradient × demand, an AND-gate that
+# stalls if either is missing. That is a rate reading TWO inputs at once, which a
+# single edge cannot do; it wants the `reaction` recipe (the factory pattern) or
+# the `limiting` bottleneck law. Left for the demand-coupled sequel.
+
+node glucose   : range(0, 100), init(70)                          # the fuel dial — lower it, watch downstream
+node reservoir : range(0, 100), init(20) @ bucket(fill = dots)    # the proton dam — the reserve
+node atp       : range(0, 100), init(0)  @ bucket(fill = dots)    # the refined token — production
+external etc        # electron transport chain — the pump (carriers from glucose drive it)
+external matrix     # protons return, down the gradient
+external adp        # ADP + Pi — empty tokens waiting to be charged
+external work       # everything the cell does, paid for in ATP
+
+etc       -> reservoir : proportional(of = glucose, k = 0.10)            # pump rate SET by glucose (read, not drained)
+reservoir -> matrix    : proportional(of = reservoir, k = 0.35) @ rotor  # ATP synthase: the flux spins the rotor
+adp       -> atp       : proportional(of = reservoir, k = 0.18)          # synthesis metered by the gradient
+atp       -> work      : proportional(k = 0.15)                          # the cell spends it
+
+pathway respiration : etc->reservoir, reservoir->matrix, adp->atp, atp->work

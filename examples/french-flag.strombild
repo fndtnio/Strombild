@@ -1,0 +1,39 @@
+# french-flag — one gradient, two thresholds, three fates (Wolpert 1969)
+#
+# the note that started this:
+#   two switches, two thresholds. switch A flips at low concentration, switch B
+#   at high. read the combinations along the gradient:
+#     high end: both A and B ON      → red
+#     middle:   A ON, B OFF           → white
+#     low end:  both OFF              → blue
+#   three regions, three fates, one gradient. the "fate" is a *combination* of
+#   switch states read off a shared input — composition-vs-selection in miniature.
+#
+# HOW THIS RUNS as Strombild: the model is single-compartment, so "position
+# along the gradient" is not a spatial axis — it's the value of `morphogen`,
+# the knob you sweep (exactly as café's init() is its experiment). morphogen is
+# a held node: nothing flows in or out of it, so it just sits at its level and
+# is *read* by both switch inflows (the dashed influence arrows). Set init() to
+# 20 / 45 / 80 and the static diagram shows blue / white / red. To see all three
+# territories at once — the flag — open french-flag.html, which runs fateScan()
+# across the whole range and colours the bands, with boundaries placed by the math.
+#
+# NOTE: these are steep monotone readouts (the canonical Wolpert reading: a
+# threshold on a gradient). The café/gene lineage — self-activating, genuinely
+# *bistable* switches — is the natural next refinement: it makes the blue/white
+# and white/red boundaries snap sharp (a shallow gradient → crisp stripe).
+
+node morphogen : range(0, 100), init(45)                          # the held gradient level (the knob)
+node switchA   : range(0, 10),  init(0) @ bucket(fill = water, threshold = 5)   # low threshold (~30)
+node switchB   : range(0, 10),  init(0) @ bucket(fill = water, threshold = 5)   # high threshold (~65)
+external source
+external sink
+
+# inflows are FED by an external source but their RATE reads `morphogen` (of =
+# morphogen ≠ src), so morphogen governs both switches without being drained.
+source -> switchA : hill(of = morphogen, max = 10, k = 30, n = 8)   # A trips around morphogen ≈ 30
+source -> switchB : hill(of = morphogen, max = 10, k = 65, n = 8)   # B trips around morphogen ≈ 65
+switchA -> sink   : proportional(of = switchA, k = 1)               # decay (so steady level = inflow)
+switchB -> sink   : proportional(of = switchB, k = 1)
+
+pathway flag : source->switchA, source->switchB, switchA->sink, switchB->sink

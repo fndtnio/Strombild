@@ -1,0 +1,52 @@
+# golgi — the cell's router, with no router in it
+#
+# The Golgi is sold as a sorting office: a protein arrives wearing a header, a
+# clerk reads the header, the protein is sent to the right door. That picture
+# has a little man in it. Take him out.
+#
+# What is actually there is a CONVEYOR and three LEAKS. Cargo arrives from the
+# ER at the cis face, matures along the stack (cis → medial → trans) — one
+# directional flow, the cisternae handing cargo forward — and piles up at the
+# trans face, the shipping dock. From the dock there are three exits running in
+# parallel: to the lysosome, to the plasma membrane, to secretion. Each exit has
+# its own RATE. A "tag" (mannose-6-phosphate for the lysosome, a signal for
+# secretion, default for the membrane) is nothing more than which exit a given
+# protein is FAST down. No clerk reads anything. The split between the three
+# destinations is just the ratio of the three rate constants — competition, not
+# decision. That is the same move café and gene-express make: behaviour that
+# looks chosen falls out of rates that merely compete.
+#
+# Watch it run: the three destination buckets fill to steady heights in the
+# ratio 0.15 : 0.40 : 0.25 — the routing table, drawn by the math, not asserted.
+# Change one exit's k and the whole distribution re-balances. That IS retargeting
+# a protein: you don't re-educate a clerk, you change a rate.
+#
+# THE GAP THIS EXPOSES (the next model's job): Strombild splits a FLUX, not an
+# item. It says "40% of the trans pool leaves toward the membrane per unit time,"
+# never "THIS protein, bearing THIS header, goes to the membrane." For a flux,
+# competing rates is the honest and complete story. The day a model needs to
+# follow one tagged item through a branch — to say the header is read once and
+# commits — that is the gap, and it wants a token/identity the stocks don't have.
+
+node cis        : range(0, 30), init(0)  @ bucket(fill = dots)        # cargo arriving, untagged
+node trans      : range(0, 30), init(0)   @ bucket(fill = dots)       # the shipping dock (tagged, sorted by rate)
+node lysosome   : range(0, 20), init(0) @ bucket(fill = dots)             # exit 1 — mannose-6-phosphate
+node membrane   : range(0, 20), init(0) @ bucket(fill = dots)             # exit 2 — default / cell surface
+node secretion  : range(0, 20), init(0) @ bucket(fill = dots)            # exit 3 — secretion signal
+external er          # the source: protein folded and shipped out of the ER
+external void        # destinations turn over (proteins are used / degraded)
+
+er    -> cis        : constant(c = 6)                  # steady supply from the ER
+cis   -> trans      : proportional(k = 0.6)            # maturation: the stack hands cargo forward
+
+# the three exits — same pool, three competing rates. the k's ARE the tags.
+trans -> lysosome   : proportional(of = trans, k = 0.15)
+trans -> membrane   : proportional(of = trans, k = 0.40)
+trans -> secretion  : proportional(of = trans, k = 0.25)
+
+# each destination turns over, so its steady height reads its routing rate
+lysosome  -> void   : proportional(k = 0.2)
+membrane  -> void   : proportional(k = 0.2)
+secretion -> void   : proportional(k = 0.2)
+
+pathway route : er->cis, cis->trans, trans->lysosome, trans->membrane, trans->secretion, lysosome->void, membrane->void, secretion->void

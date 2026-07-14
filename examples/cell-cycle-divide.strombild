@@ -1,0 +1,31 @@
+# cell cycle — division (the same clock, but the rhythm is a discrete EVENT)
+#
+# the smooth clock (cell-cycle.strombild) got its rhythm from a third node, the
+# APC, continuously destroying cyclin — a feedback loop that waves on its own.
+# here we delete the APC and let the cell actually DIVIDE instead. cyclin builds,
+# switches MPF on; when MPF crosses the mitosis threshold, one discrete event fires
+# — the cell divides — and BOTH cyclin and MPF snap back to zero. then it climbs
+# again. same biology, two sources of rhythm: smooth feedback there, a reset here.
+#
+# note what's gone: there is no flow draining cyclin. cyclin is removed ONLY by the
+# divide event. that's the point of an event — the all-at-once drop a flow can't do.
+# watch cyclin sawtooth, MPF snap up to the line and trip it, and the divisions
+# crate tick up one square per cycle. period is rock-steady (~15 time units).
+#
+# the line drawn across MPF (threshold = 6) IS the event's guard (mpf >= 6): the
+# diagram shows you exactly the level that triggers mitosis.
+
+node cyclin    : range(0, 18), init(0) @ bucket(fill = dots)          # built; destroyed only by dividing
+node mpf       : range(0, 8),  init(0) @ bucket(fill = dots, threshold = 6)   # the mitosis trigger
+node divisions : range(0, 40), init(0) @ box(fill = squares)         # one square per completed division
+
+external ribosome   # makes cyclin
+external cdk         # inactive CDK pool (switched on -> mpf, and back off)
+
+ribosome -> cyclin : constant(c = 1)                          # steady synthesis
+cdk      -> mpf     : hill(of = cyclin, max = 10, k = 15, n = 8)   # cyclin switches CDK on
+mpf      -> cdk     : proportional(of = mpf, k = 0.5)         # MPF relaxes back off
+
+# mitosis: when MPF passes the trigger, the cell divides — cyclin and MPF reset,
+# and one division is counted. the reset is what no rate law could express.
+event divide : mpf >= 6 : cyclin = 0, mpf = 0, divisions += 1

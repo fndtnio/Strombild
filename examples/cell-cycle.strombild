@@ -1,0 +1,37 @@
+# cell cycle — the clock (a smooth oscillator from negative feedback)
+#
+# the punchline first: there is NO new language here. constant, hill, proportional
+# — the same three rate laws that made the café bistable. wire three of them into
+# a RING with one inversion and the system stops settling and starts *ticking*.
+#
+# the ring (each arrow is "drives"):
+#     cyclin --(+)--> mpf --(+)--> apc --(destroys)--> cyclin
+#   cyclin switches CDK on (active CDK = MPF); MPF switches the APC on; the APC
+#   destroys cyclin. two pushes and one cut = net negative feedback. negative
+#   feedback around a loop with delay doesn't rest — it oscillates.
+#
+# watch the three buckets pulse IN SEQUENCE: cyclin rises first, then mpf, then
+# apc — and as apc peaks it tears cyclin back down, restarting the loop. that
+# travelling wave is the cell cycle's clock. period is ~32 time units here.
+#
+# (CDK and the APC are just switched on and off — they cycle back to their own
+# inactive pools, unchanged in amount. only cyclin is actually built and destroyed,
+# which is exactly the molecule the cell makes and shreds once per division.)
+
+node cyclin : range(0, 18), init(2)  @ bucket(fill = dots)   # the driver: built, then destroyed
+node mpf    : range(0, 12), init(0)  @ bucket(fill = dots)   # active cyclin–CDK (M-phase promoting factor)
+node apc    : range(0, 12), init(0)  @ bucket(fill = dots)   # the protease that shreds cyclin
+
+external ribosome   # makes cyclin
+external bin         # where destroyed cyclin goes
+external cdk         # pool of inactive CDK (switched on -> mpf, and back off)
+external apc_off     # pool of inactive APC
+
+ribosome -> cyclin  : constant(c = 1)                        # steady synthesis
+cyclin   -> bin      : proportional(of = apc, k = 0.6)        # APC destroys cyclin  ← the negative arm
+cdk      -> mpf      : hill(of = cyclin, max = 4, k = 12, n = 8)  # cyclin switches CDK on
+mpf      -> cdk      : proportional(of = mpf, k = 0.2)        # MPF switches back off
+apc_off  -> apc      : hill(of = mpf, max = 4, k = 6, n = 8)  # MPF switches the APC on
+apc      -> apc_off  : proportional(of = apc, k = 0.2)        # APC switches back off
+
+pathway cell_cycle : ribosome->cyclin, cyclin->bin, cdk->mpf, mpf->cdk, apc_off->apc, apc->apc_off

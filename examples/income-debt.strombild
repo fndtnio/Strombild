@@ -1,0 +1,19 @@
+# Savings vs Debt — one tick = one month.
+# Income builds cash; a fixed payment both drains cash and pays down debt,
+# while interest keeps inflating the balance. Debt falls only 
+# outruns the interest — start below ~67 and you escape, above it you 
+node cash : range(0, 1000), init(0) @ bucket
+node debt : range(0, 500), init(50) @ bucket
+
+external income     # paycheck in
+external interest   # accruing interest (inflates the balance)
+external lender     # payments out / debt extinguished
+
+income   -> cash   : constant(c = 2)                     # monthly take-home
+
+cash     -> lender : constant(c = 1.2)                   # the payment leaves your wallet
+
+interest -> debt   : proportional(of = debt, k = 0.018)  # 22% APR, compounding monthly
+debt     -> lender : constant(c = 1.2)                   # ...and cancels that much debt
+
+pathway payoff : income->cash, cash->lender, interest->debt, debt->lender

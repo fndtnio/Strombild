@@ -1,0 +1,12 @@
+# gene self-activation — a gene that switches itself on (positive autoregulation)
+# the café's twin: a bistable switch. init(30) starts above the switch point, so it
+# latches fully expressed; set init to 10 and it stays silent. the threshold line is
+# computed from the math (the unstable equilibrium), so it can't drift out of sync.
+node protein : range(0, 50), init(30) @ bucket(fill = dots, threshold = auto)
+external machine    # the production apparatus (source of new balls)
+external void       # where decayed balls go (sink)
+
+machine -> protein : hill(of = protein, max = 8, k = 25, n = 4)   # self-activation: balls make balls (cooperative)
+protein -> void    : proportional(of = protein, k = 0.15)         # decay: each ball has a chance to vanish
+
+pathway gene : machine->protein, protein->void

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The French flag · bistable — sharp boundaries and memory</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper:      #f7f2e6;
+    --paper-deep: #efe7d3;
+    --ink:        #22304a;
+    --ink-soft:   rgba(34, 48, 74, 0.55);
+    --vermilion:  #c8451f;
+    --teal:       #1f7a6d;
+    --water:      #3d7fa6;
+    --gold:       #b98a1d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--paper);
+    background-image:
+      repeating-linear-gradient(0deg,  transparent 0 23px, rgba(34,48,74,0.045) 23px 24px),
+      repeating-linear-gradient(90deg, transparent 0 23px, rgba(34,48,74,0.045) 23px 24px);
+    color: var(--ink); font-family: 'IBM Plex Mono', monospace;
+    padding: 18px 20px 20px; max-width: 920px; margin: 0 auto;
+  }
+  header {
+    display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+    gap: 4px 12px; margin-bottom: 6px; border-bottom: 2px solid var(--ink); padding-bottom: 8px;
+  }
+  h1 { font-family: 'Fraunces', serif; font-weight: 600; font-style: italic; font-size: 22px; }
+  h1 .fig {
+    font-family: 'IBM Plex Mono', monospace; font-style: normal; font-weight: 500; font-size: 11px;
+    letter-spacing: 0.18em; color: var(--vermilion); text-transform: uppercase;
+    margin-right: 10px; vertical-align: 2px;
+  }
+  .equation { font-size: 12px; color: var(--ink-soft); }
+  .equation a { color: var(--teal); }
+  .lede { font-size: 12.5px; line-height: 1.55; color: var(--ink-soft); margin: 8px 2px 4px; max-width: 770px; }
+  .lede b { color: var(--ink); font-weight: 500; }
+  #map { width: 100%; height: 410px; display: block; margin-top: 4px; }
+  .knob {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    border-top: 1px dashed rgba(34,48,74,0.25); margin-top: 10px; padding-top: 12px;
+  }
+  .knob label { font-size: 11px; letter-spacing: 0.04em; }
+  .knob input[type=range] { width: 300px; accent-color: var(--vermilion); }
+  .branches { display: flex; gap: 18px; flex-wrap: wrap; }
+  .branch { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .branch .tag { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); }
+  .swatch { width: 24px; height: 17px; border: 1.5px solid var(--ink); border-radius: 2px; }
+  .fate-name { font-family: 'Fraunces', serif; font-style: italic; font-size: 15px; }
+  footer { margin-top: 14px; font-size: 11px; color: var(--ink-soft); line-height: 1.5; }
+  code { background: var(--paper-deep); padding: 1px 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1><span class="fig">Strombild · fate scan · bistable</span>The French flag, with memory</h1>
+    <div class="equation">compare: <a href="french-flag.html">the graded (Wolpert) reading →</a></div>
+  </header>
+
+  <p class="lede">
+    Same flag, but each switch is now genuinely <b>bistable</b> (café-style self-activation
+    + a morphogen bias) instead of a smooth readout. Two things appear that the graded version
+    can't show: boundaries <b>snap sharp</b>, and the switches show <b>hysteresis</b> — each
+    trips ON at a higher morphogen level than it trips OFF. So the fate of a cell depends on its
+    <b>history</b>. A <b>naive</b> field (switches start off, swept up ▸) and a <b>primed</b>
+    field (switches start on, swept down ◂) draw <b>different flags</b> from the very same
+    gradient. The shaded zones are where they disagree — that gap is the memory.
+  </p>
+
+  <canvas id="map"></canvas>
+
+  <div class="knob">
+    <label>position → morphogen <output id="mOut">45</output></label>
+    <input type="range" id="mSlider" min="0" max="100" step="0.5" value="45">
+    <div class="branches">
+      <div class="branch"><span class="tag">naive ▸</span><div class="swatch" id="swN"></div><span class="fate-name" id="fnN">white</span></div>
+      <div class="branch"><span class="tag">primed ◂</span><div class="swatch" id="swP"></div><span class="fate-name" id="fnP">red</span></div>
+    </div>
+  </div>
+
+  <footer>
+    Model: <code>french-flag-bistable.strombild</code> · analysis: <code>Strombild.fateScan(…, {from:"lo"|"hi"})</code>.
+    Up-sweep starts each switch naive (off); down-sweep starts it primed (on). Where the two
+    strips differ, the same position yields two fates — a switch is <i>remembering</i>.
+  </footer>
+
+<script src="strombild.js"></script>
+<script>
+"use strict";
+(() => {
+const S = window.Strombild;
+
+// Mirrors french-flag-bistable.strombild (inlined; the .strombild file is canonical).
+const SRC = `
+node morphogen : range(0, 100), init(45)
+node switchA   : range(0, 12), init(0) @ bucket(fill = water, threshold = 5)
+node switchB   : range(0, 12), init(0) @ bucket(fill = water, threshold = 5)
+external auto
+external drive
+external sink
+auto  -> switchA : hill(of = switchA, max = 8, k = 5, n = 4)
+drive -> switchA : proportional(of = morphogen, k = 0.068)
+auto  -> switchB : hill(of = switchB, max = 8, k = 5, n = 4)
+drive -> switchB : proportional(of = morphogen, k = 0.032)
+switchA -> sink  : proportional(of = switchA, k = 1)
+switchB -> sink  : proportional(of = switchB, k = 1)
+pathway flag : auto->switchA, drive->switchA, auto->switchB, drive->switchB, switchA->sink, switchB->sink
+`;
+
+const C = {
+  ink: "#22304a", inkSoft: "rgba(34,48,74,0.55)", vermilion: "#c8451f",
+  teal: "#1f7a6d", water: "#3d7fa6", gold: "#b98a1d", paper: "#f7f2e6",
+  blue: "#3d7fa6", white: "#faf7ef", red: "#c8451f",
+};
+
+const { model, errors } = S.parseModel(SRC);
+if (errors.length) { document.body.insertAdjacentHTML("beforeend", "<pre>"+JSON.stringify(errors)+"</pre>"); return; }
+const SETTLE = 80, SAMPLES = 240, VMAX = 12;
+const up = S.fateScan(model, "morphogen", ["switchA", "switchB"], { from: "lo", settle: SETTLE, samples: SAMPLES });
+const dn = S.fateScan(model, "morphogen", ["switchA", "switchB"], { from: "hi", settle: SETTLE, samples: SAMPLES });
+const LINE = up.lines.switchA;   // both share 5
+
+function fateOf(onA, onB) {
+  if (!onA && !onB) return { name: "blue",  color: C.blue };
+  if (onA && !onB)  return { name: "white", color: C.white };
+  return { name: "red", color: C.red };
+}
+// settled levels at an arbitrary morphogen, on a chosen branch
+function readAt(M, from) {
+  const eng = new S.Engine(model);
+  eng.reset(); eng.state.set("morphogen", M);
+  if (from === "hi") { eng.state.set("switchA", VMAX); eng.state.set("switchB", VMAX); }
+  eng.advance(SETTLE);
+  const a = eng.state.get("switchA"), b = eng.state.get("switchB");
+  return { a, b, onA: a >= LINE, onB: b >= LINE };
+}
+
+const cv = document.getElementById("map");
+const ctx = cv.getContext("2d");
+let W = 0, H = 0;
+const M = { l: 54, r: 16, t: 14, b: 32 };
+
+function geom() {
+  const x0 = M.l, x1 = W - M.r;
+  const top = M.t, bot = H - M.b;
+  const curveH = (bot - top) * 0.50;
+  const curveTop = top;
+  const stripH = (bot - top - curveH - 22) / 2;
+  const naiveTop = curveTop + curveH + 14;
+  const primedTop = naiveTop + stripH + 6;
+  return { x0, x1, curveTop, curveH, naiveTop, primedTop, stripH, bot };
+}
+const xOf = (g, m) => g.x0 + (g.x1 - g.x0) * (m - up.lo) / (up.hi - up.lo);
+const yLevel = (g, v) => g.curveTop + g.curveH * (1 - v / VMAX);
+
+function fit() {
+  const cssW = cv.clientWidth, cssH = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+  cv.width = cssW * dpr; cv.height = cssH * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); W = cssW; H = cssH;
+}
+
+function strip(g, scan, yTop) {
+  const n = scan.columns.length;
+  for (let i = 0; i < n; i++) {
+    const c = scan.columns[i];
+    const xA = xOf(g, c.x) - (g.x1 - g.x0) / (2 * n) - 0.5;
+    const w = (g.x1 - g.x0) / n + 1;
+    ctx.fillStyle = fateOf(c.on.switchA, c.on.switchB).color;
+    ctx.fillRect(xA, yTop, w, g.stripH);
+  }
+  ctx.strokeStyle = C.ink; ctx.lineWidth = 1.4; ctx.strokeRect(g.x0, yTop, g.x1 - g.x0, g.stripH);
+}
+
+function hatch(g, x0, x1) {
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x0, g.naiveTop, x1 - x0, g.primedTop + g.stripH - g.naiveTop); ctx.clip();
+  ctx.strokeStyle = "rgba(34,48,74,0.16)"; ctx.lineWidth = 1;
+  for (let x = x0 - 40; x < x1 + 40; x += 6) {
+    ctx.beginPath(); ctx.moveTo(x, g.naiveTop); ctx.lineTo(x + 40, g.primedTop + g.stripH); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function curve(g, scan, key, color, dashed) {
+  ctx.save();
+  ctx.strokeStyle = color; ctx.lineWidth = 2; if (dashed) ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  scan.columns.forEach((c, i) => { const x = xOf(g, c.x), y = yLevel(g, c.levels[key]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  ctx.stroke(); ctx.restore();
+}
+
+function draw(curM) {
+  fit();
+  ctx.clearRect(0, 0, W, H);
+  const g = geom();
+
+  // hysteresis bands: where each switch's on (up) and off (down) thresholds straddle
+  const bands = [["switchA", C.teal], ["switchB", C.vermilion]];
+  for (const [key] of bands) {
+    const onX = up.boundaries[key], offX = dn.boundaries[key];
+    if (onX == null || offX == null) continue;
+    hatch(g, xOf(g, Math.min(onX, offX)), xOf(g, Math.max(onX, offX)));
+  }
+
+  // the two flags
+  strip(g, up, g.naiveTop);
+  strip(g, dn, g.primedTop);
+
+  // switch line + bistable loop curves (up solid, down dashed)
+  const ty = yLevel(g, LINE);
+  ctx.save(); ctx.setLineDash([5, 4]); ctx.strokeStyle = C.gold; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(g.x0, ty); ctx.lineTo(g.x1, ty); ctx.stroke(); ctx.restore();
+  ctx.fillStyle = C.gold; ctx.font = "10px 'IBM Plex Mono', monospace"; ctx.textAlign = "left";
+  ctx.fillText("switch line", g.x0 + 4, ty - 4);
+  curve(g, up, "switchA", C.teal, false);  curve(g, dn, "switchA", C.teal, true);
+  curve(g, up, "switchB", C.vermilion, false); curve(g, dn, "switchB", C.vermilion, true);
+
+  // legend
+  ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.textAlign = "left";
+  ctx.fillStyle = C.teal;      ctx.fillText("switch A", g.x0 + 6, g.curveTop + 12);
+  ctx.fillStyle = C.vermilion; ctx.fillText("switch B", g.x0 + 6, g.curveTop + 26);
+  ctx.fillStyle = C.inkSoft;   ctx.fillText("solid = naive ▸ (up)   dashed = primed ◂ (down)", g.x0 + 78, g.curveTop + 12);
+
+  // strip labels
+  ctx.font = "10px 'IBM Plex Mono', monospace"; ctx.textAlign = "right"; ctx.fillStyle = C.inkSoft;
+  ctx.fillText("naive ▸", g.x0 - 6, g.naiveTop + g.stripH / 2 + 3);
+  ctx.fillText("primed ◂", g.x0 - 6, g.primedTop + g.stripH / 2 + 3);
+
+  // x axis (morphogen)
+  ctx.strokeStyle = "rgba(34,48,74,0.3)"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(g.x0, g.primedTop + g.stripH); ctx.lineTo(g.x1, g.primedTop + g.stripH); ctx.stroke();
+  ctx.fillStyle = C.inkSoft; ctx.font = "10px 'IBM Plex Mono', monospace"; ctx.textAlign = "center";
+  for (let m = 0; m <= 100; m += 25) ctx.fillText(String(m), xOf(g, m), g.primedTop + g.stripH + 24);
+  ctx.save(); ctx.translate(14, (g.curveTop + g.bot) / 2); ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = C.inkSoft; ctx.fillText("morphogen concentration  →", 0, 0); ctx.restore();
+
+  // position marker + branch dots
+  const mx = xOf(g, curM);
+  ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(mx, g.curveTop - 4); ctx.lineTo(mx, g.primedTop + g.stripH); ctx.stroke();
+  for (const [scan, from] of [[up, "lo"], [dn, "hi"]]) {
+    const r = readAt(curM, from);
+    for (const [key, on, v] of [["switchA", r.onA, r.a], ["switchB", r.onB, r.b]]) {
+      const y = yLevel(g, v);
+      ctx.beginPath(); ctx.arc(mx, y, 3.5, 0, 7);
+      ctx.fillStyle = on ? C.gold : C.paper; ctx.fill();
+      ctx.strokeStyle = key === "switchA" ? C.teal : C.vermilion; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+  }
+  ctx.fillStyle = C.ink; ctx.beginPath();
+  ctx.moveTo(mx, g.curveTop - 4); ctx.lineTo(mx - 4, g.curveTop - 11); ctx.lineTo(mx + 4, g.curveTop - 11);
+  ctx.closePath(); ctx.fill();
+}
+
+// slider
+const slider = document.getElementById("mSlider"), mOut = document.getElementById("mOut");
+const swN = document.getElementById("swN"), fnN = document.getElementById("fnN");
+const swP = document.getElementById("swP"), fnP = document.getElementById("fnP");
+function update() {
+  const m = parseFloat(slider.value); mOut.textContent = m.toFixed(0);
+  const rN = readAt(m, "lo"), rP = readAt(m, "hi");
+  const fN = fateOf(rN.onA, rN.onB), fP = fateOf(rP.onA, rP.onB);
+  swN.style.background = fN.color; fnN.textContent = fN.name;
+  swP.style.background = fP.color; fnP.textContent = fP.name;
+  draw(m);
+}
+slider.addEventListener("input", update);
+window.addEventListener("resize", update);
+window.addEventListener("load", update);
+update();
+})();
+</script>
+</body>
+</html>

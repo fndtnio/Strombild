@@ -1,0 +1,15 @@
+# Notes / scratch (org-mode ideas files stay out of the public repo)
+*.org
+
+# macOS
+.DS_Store
+
+# Editor / OS cruft
+*.swp
+*~
+.idea/
+.vscode/
+
+# Node (only if tooling is ever added; there are no deps today)
+node_modules/
+npm-debug.log*

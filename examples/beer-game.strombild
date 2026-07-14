@@ -1,0 +1,22 @@
+# beer-game — the bullwhip, one echelon. A warehouse orders stock from a supplier
+# that ships after a delay. The order rule is anchoring-and-adjustment:
+#   order = expected demand + (target shelf - on hand) + (target pipeline - on order)
+# Drop the last term (pathway "naive": ignore what's already on the way) and the
+# warehouse over-orders, gluts, then slams ordering shut — it RINGS. Keep it
+# (pathway "savvy") and the same shock settles cleanly. Delay + feedback = the whip.
+node inventory  : range(0, 80),  init(5)  @ box(fill = squares)   # on the shelf (perturbed low)
+node supplyLine : range(0, 160), init(40) @ box(fill = dots)      # ordered, not yet arrived
+
+external forecast    # orders covering expected sales (the anchor)
+external restock     # extra orders when the shelf is below target
+external pipeline    # ...minus what's already on the way (the savvy term)
+external customer    # demand walks out the door
+
+forecast   -> supplyLine : constant(c = 10)                              # anchor on expected demand
+restock    -> supplyLine : adjust(of = inventory,  target = 20, k = 1.0) # top the shelf up toward 20
+pipeline   -> supplyLine : adjust(of = supplyLine, target = 40, k = 0.25)# discount the 40 already on the way
+supplyLine -> inventory  : proportional(of = supplyLine, k = 0.25)       # goods arrive after ~4 units (delay)
+inventory  -> customer   : constant(c = 10)                              # steady demand
+
+pathway naive : forecast->supplyLine, restock->supplyLine, supplyLine->inventory, inventory->customer
+pathway savvy : forecast->supplyLine, restock->supplyLine, pipeline->supplyLine, supplyLine->inventory, inventory->customer

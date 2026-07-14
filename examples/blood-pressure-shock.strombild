@@ -1,0 +1,44 @@
+# cardiac output = heart-rate × filling — the two loops finally meet
+#
+# The fast model (blood-pressure) drove the heart by the PULSE. The slow model
+# (blood-pressure-volume) drove it by the VOLUME (Frank-Starling: a fuller heart
+# throws a bigger stroke). Both are true, because cardiac output is genuinely BOTH
+# at once — it's heart-rate TIMES stroke-volume. Writing that took a rate law that
+# multiplies two stocks, which is why this model is what forced Strombild's `product`:
+#
+#     heart -> pressure : product(of = pulse, by = volume, k)    # rate = k · pulse · volume
+#
+# Now one flow carries both loops. The baroreflex still defends the pressure by
+# working the pulse — but the pulse is only half of the cardiac output; the other
+# half is how much blood there is to pump. So watch what the reflex has to DO when
+# the volume falls.
+#
+# THE EXPERIMENT — `volume` is a held dial (nothing flows in or out, so it sits at
+# its init). Lower it to bleed the patient, and re-run:
+#   • volume 50 (normal):  pressure 93, pulse ~72. resting.
+#   • volume 35 (mild bleed): pressure still 93 — but the pulse has climbed to ~102.
+#     the reflex is trading a faster heart for the missing volume. COMPENSATED: the
+#     number you'd measure (pressure) looks fine while the body strains underneath.
+#   • volume 25 (bad bleed): pressure still 93, pulse ~143. racing, still holding.
+#   • volume 12 (severe): the pulse hits its ceiling (200) and CAN'T rise further —
+#     so the pressure finally falls, to ~62. DECOMPENSATED SHOCK. This is why a
+#     dropping blood pressure is a late, ominous sign: it only moves once the pulse
+#     has already run out of room. The pulse warned you long before.
+#
+# That story is the product doing its job: neither factor alone explains it. And it's
+# exactly your point about mechanism — the outcome you measure (pressure) hides the
+# mechanism (a maxed-out reflex) until it's nearly too late; the model shows both.
+
+node pressure : range(0, 220), init(70) @ bucket(fill = water)   # arterial pressure, mmHg
+node pulse    : range(0, 200), init(70) @ bucket(fill = dots)    # heart rate — the reflex's effector
+node volume   : range(0, 120), init(50) @ bucket(fill = water)   # blood volume — a held dial; lower it to bleed
+
+external heart
+external body
+external nerves
+
+heart    -> pressure : product(of = pulse, by = volume, k = 0.0026)  # cardiac output = heart-rate × filling
+pressure -> body     : proportional(of = pressure, k = 0.1)          # runoff through the arterioles
+nerves   -> pulse    : adjust(of = pressure, target = 93, k = 0.03)   # the baroreflex — defend the setpoint
+
+pathway resting : heart->pressure, pressure->body, nerves->pulse

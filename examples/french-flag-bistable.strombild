@@ -1,0 +1,38 @@
+# french-flag-bistable — the sharp-boundary reading (the café lineage)
+#
+# the companion to french-flag.strombild. There the switches were steep but
+# MONOTONE readouts (Wolpert's original: a threshold on a gradient). Here each
+# switch is genuinely BISTABLE — café-style positive feedback (it reads itself)
+# plus a morphogen bias. Two consequences the monotone version can't show:
+#
+#   1. SHARP boundaries. A switch doesn't ramp through its threshold; it sits
+#      off, then SNAPS on. A shallow morphogen gradient yields a crisp stripe.
+#   2. HYSTERESIS (memory). Each switch trips ON at a higher morphogen level
+#      than it trips OFF, so a cell's fate depends on its history. A naive field
+#      (switches start off) draws its boundaries near morphogen 30 / 65; a field
+#      that was once fully activated (switches start on) holds those fates far
+#      down the gradient (~8 / ~18). One gradient, two flags — that gap is memory.
+#
+# Each switch has TWO inflows: `auto` carries the self-activation (of = switchX,
+# the café feedback that makes it bistable) and `drive` carries the morphogen
+# bias (of = morphogen — read-only, so the gradient governs without being drained).
+# switchA gets the stronger morphogen drive, so it trips first; switchB needs more.
+#
+# See it as the up-sweep vs down-sweep strips in french-flag-bistable.html
+# (Strombild.fateScan with { from: "lo" } and { from: "hi" }).
+
+node morphogen : range(0, 100), init(45)
+node switchA   : range(0, 12), init(0) @ bucket(fill = water, threshold = 5)
+node switchB   : range(0, 12), init(0) @ bucket(fill = water, threshold = 5)
+external auto    # self-activation source (rate reads the switch itself)
+external drive   # morphogen-bias source (rate reads morphogen)
+external sink
+
+auto  -> switchA : hill(of = switchA, max = 8, k = 5, n = 4)        # positive feedback → bistable
+drive -> switchA : proportional(of = morphogen, k = 0.068)          # strong bias: trips ON ~30
+auto  -> switchB : hill(of = switchB, max = 8, k = 5, n = 4)
+drive -> switchB : proportional(of = morphogen, k = 0.032)          # weak bias: trips ON ~65
+switchA -> sink  : proportional(of = switchA, k = 1)                # decay
+switchB -> sink  : proportional(of = switchB, k = 1)
+
+pathway flag : auto->switchA, drive->switchA, auto->switchB, drive->switchB, switchA->sink, switchB->sink
