@@ -1,0 +1,62 @@
+# erythropoiesis — the loop that sets how much blood you have
+#
+# Your red-cell mass is held, like your blood pressure, by a loop. The sensor is the
+# KIDNEY: cells there read how much oxygen reaches them, and when it is short they
+# secrete EPO (erythropoietin). EPO's job is to let erythroid PROGENITORS in the
+# marrow live: without it they die within a day; with it they survive, divide and
+# mature into RED CELLS, which carry oxygen — including to the kidney, which then
+# makes less EPO. Red cells live about 120 days and are removed by the spleen. That
+# is the whole loop, and it is negative: more red cells -> less EPO -> fewer red cells.
+#
+# The chain, in the language's shapes:
+#   • kidney -> epo is a REPRESSION — EPO production is high when red cells are few
+#     and falls steeply as they rise (`repress` is the inhibitory hill; its `k` is the
+#     hematocrit at which production is half-maximal). The real curve is steeper still
+#     (EPO rises roughly tenfold for every few grams of hemoglobin lost); this one
+#     tops out near 90 mU/mL. The shape is right, the ceiling is modest.
+#   • EPO is cleared with a half-life of about five hours (k = 3.3 per day).
+#   • stem cells feed progenitors at a steady rate the loop does not control.
+#   • progenitors -> red_cells is a PRODUCT: how many mature is progenitors × EPO.
+#     That multiplication IS the mechanism. EPO does not make progenitors; it keeps
+#     them from dying. Set EPO to zero and the flow is zero, whatever the marrow holds.
+#   • progenitors -> apoptosis: the default fate, a day's half-life. Most progenitors
+#     die at normal EPO. That waste is the reserve the loop draws on in anemia.
+#
+# Time is in DAYS. It settles where it should: hematocrit 45%, EPO 10 mU/mL.
+#
+# Experiments on the source:
+#   • bleed: set red_cells' init to 30. EPO doubles within a day, the marrow's output
+#     rises, and the hematocrit is back near 45 in about three weeks — then EPO falls
+#     back to 10. The loop defends the stock, and it uses EPO as the signal, not the
+#     material.
+#   • kidney failure: set repress's max to 0. EPO drains in a day; the progenitors
+#     keep arriving and keep dying; red cells fall away over months with nothing to
+#     replace them. The anemia of chronic kidney disease, and why the treatment is
+#     recombinant EPO (a constant inflow to `epo` — add `drug -> epo : constant(c)`).
+#   • the two diseases of too many red cells live in `erythropoiesis-pv.strombild`,
+#     and they are one edge away from this file.
+#
+# What this does NOT model: iron (hemoglobin needs it; the marrow can be EPO-rich and
+# iron-poor), the residual EPO the liver makes, the seven-day maturation delay as more
+# than the progenitor stock's residence time, and oxygen itself as a stock (the kidney
+# here reads the hematocrit directly; at altitude or with lung disease it reads less
+# oxygen at the same hematocrit, which the `repress` k would have to shift to show).
+
+node epo         : range(0, 400), init(10) @ bucket(fill = water)   # plasma erythropoietin, mU/mL
+node progenitors : range(0, 400), init(50) @ bucket(fill = dots)    # EPO-dependent erythroid precursors in the marrow
+node red_cells   : range(0, 80),  init(45) @ bucket(fill = water)   # red-cell mass as hematocrit, %
+
+external kidney      # EPO source — the oxygen sensor
+external clearance   # EPO sink — receptor uptake and the liver
+external marrow      # stem cells committing to the red line
+external apoptosis   # progenitors that got no EPO
+external spleen      # old red cells removed
+
+kidney      -> epo         : repress(of = red_cells, max = 300, k = 35, n = 8)       # less oxygen, more EPO — steeply
+epo         -> clearance   : proportional(of = epo, k = 3.3)                          # half-life about five hours
+marrow      -> progenitors : constant(c = 50.4)                                       # commitment the loop does not control
+progenitors -> apoptosis   : proportional(of = progenitors, k = 1)                    # the default fate: die within a day
+progenitors -> red_cells   : product(of = progenitors, by = epo, k = 0.00075)         # survive and mature ONLY with EPO
+red_cells   -> spleen      : proportional(of = red_cells, k = 0.00833)                # a 120-day life
+
+pathway body : kidney->epo, epo->clearance, marrow->progenitors, progenitors->apoptosis, progenitors->red_cells, red_cells->spleen

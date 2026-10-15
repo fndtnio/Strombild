@@ -1,0 +1,162 @@
+# iron — what phlebotomy actually does, and why it never stops
+#
+# `erythropoiesis.strombild` has erythroblasts mature when EPO says so and is silent
+# about what they are made OF. Hemoglobin is iron, the body holds only a few grams of
+# it, and in polycythemia vera it is the material that runs out. This file is the
+# supply side.
+#
+# THE UNIT IS THE TRICK. Iron is measured in HEMATOCRIT POINTS IT COULD BUILD rather
+# than in milligrams. One hematocrit point of red cells carries roughly 53 mg of
+# iron, so the whole file runs in one currency and two things fall out for free. Iron
+# consumed by the marrow equals red cells produced. And PHLEBOTOMY NEEDS NO IRON RULE:
+# the iron is inside the red cells, so taking 4 points of hematocrit out takes 4
+# points of iron with it. The event below says `red_cells -= 4` and nothing about
+# iron, and that is the whole point.
+#
+# TWO POOLS AND A GATE.
+#   plasma_iron — iron on transferrin, the only iron the marrow can use. TINY, turns
+#                 over several times a day.
+#   stores      — macrophage and liver iron, where dead red cells put theirs. LARGE.
+#   hepcidin    — the gate. It blocks iron LEAVING stores and ENTERING from the gut,
+#                 by having ferroportin destroyed.
+# Iron is RECYCLED, not consumed: a red cell lives 120 days, a macrophage eats it, the
+# iron comes back. Diet contributes about a fifteenth of the daily throughput. **So
+# the body is a nearly closed loop with a small leak**, which is why losing blood is
+# expensive and losing it repeatedly is ruinous.
+#
+# HEPCIDIN HAS TWO INPUTS AND BOTH MATTER. It is MADE in proportion to how loaded the
+# stores are, and REMOVED in proportion to marrow demand (the erythroferrone arm). So
+# an over-driven marrow opens the gate, and **so does iron deficiency itself.** Take
+# blood out and the body turns its own iron supply up: it fights the treatment.
+#
+# WHAT THE SHIPPED FILE DOES. PV marrow, phlebotomy on, started at the healthy steady
+# state and held near the real clinical target. Every number below is this file's
+# output, over 2500 days:
+#
+#     phlebotomy interval, first        73 days
+#     phlebotomy interval, settled     130 days
+#     iron stores, start / settled      19.1 -> 11.1
+#     hepcidin, start / settled          1.0 -> 0.47
+#
+# **THE INTERVAL LENGTHENS BECAUSE THE IRON IS GONE.** The register's own prose for
+# this disease reads "venesection every few weeks at first and every few months once
+# stable", and that lengthening is an OUTPUT here, not a setting. It comes from iron
+# alone: once the stores are low the marrow is waiting on absorption from the gut,
+# which is a trickle.
+#
+# THE THREE LEVERS, AND THE FILE'S REAL LESSON. Each is one edit.
+#
+#   ON THE STOCK — phlebotomy. The event. Removes red cells that already exist, and
+#     their iron with them. WORKS, and never stops.
+#
+#   ON THE SUBSTRATE — rusfertide, a hepcidin mimetic, approved 2026-08-28. Raise the
+#     hepcidin edge's `max` from 4.0 to 4.3. The phlebotomies STOP, the hematocrit
+#     holds at 43.5 to 44.7, and **the stores stay full at 19.2 instead of falling to
+#     11.** That contrast is the drug's whole clinical case: it holds the hematocrit
+#     without stripping the patient's iron — functional restriction rather than true
+#     deficiency, which is also why it acts in weeks rather than waiting for stores to
+#     empty.
+#     THE WINDOW IS NARROW AND THAT IS HONEST BUT OVERSTATED. 4.2 to 4.3 works; 4.4
+#     undershoots to a hematocrit of 40 and 5.0 reaches 25, which is anaemia. Anaemia
+#     IS rusfertide's dose-limiting toxicity and the drug IS titrated weekly, so the
+#     shape is right. The sharpness is not: see below.
+#
+#   ON THE EDGE — a JAK2 inhibitor. Lower the maturation `k` from 0.1247. **IT DOES
+#     NOTHING. At any dose.** Down to 0.02, a sixth of normal, the hematocrit, the
+#     stores and the phlebotomy interval are unchanged to three figures. The only
+#     thing that moves is `plasma_iron`, which backs UP because a slower marrow takes
+#     it more slowly.
+#
+# THAT NULL RESULT IS THE MOST USEFUL THING IN THE FILE. **A model with ONE binding
+# constraint can only ever report "inert" or "decisive", never "therapeutic."** Here
+# iron supply is the only brake, so pushing on the marrow is inert and pushing on iron
+# is nearly decisive — which is also why the rusfertide window came out so sharp.
+# `erythropoiesis-pv.strombild` has the mirror-image fault: the marrow edge is the
+# only brake there and iron does not exist, so the edge lever works and this one
+# cannot be asked about. **Neither file can tell you which constraint binds in a
+# patient, and that is the question a clinician actually has.** Merging them is the
+# next rung and it is not a refinement, it is the point.
+#
+# WHAT ELSE THIS FILE DOES NOT CLAIM.
+#   * Untreated, with the event deleted, the hematocrit here reaches only about 48 and
+#     rings slowly, where the disease reaches the sixties. Iron caps it, for the reason
+#     above. Read `erythropoiesis-pv.strombild` for the plateau and
+#     `clonal-escape.strombild` for why the climb takes decades.
+#   * **The induction phase is missing**, and the reason is the language rather than
+#     the biology. A newly diagnosed patient gets several units in a few weeks to come
+#     down from the sixties. A Strombild event is edge-triggered, so it fires once and
+#     waits for its guard to go false; it cannot repeat while the hematocrit is still
+#     above target. So this file starts a patient already at target and models
+#     MAINTENANCE only.
+#   * No erythroferrone stock. The marrow's suppression of hepcidin is written as
+#     demand removing hepcidin directly, one step collapsed.
+#   * The EPO sensor keeps the steep exponent from the earlier files and can ring on
+#     a timescale of years. Treat small slow oscillations as the integrator and the
+#     Hill, not as physiology.
+#   * Nothing here is the clone. This file starts after the marrow has stopped
+#     listening and asks only what it is building with.
+#
+node epo           : range(0, 400), init(10)     @ bucket(fill = water)    # plasma EPO, mU/mL
+node erythroblasts : range(0, 400), init(53.7)   @ bucket(fill = dots)     # marrow erythroid activity
+node plasma_iron   : range(0, 3),   init(0.056)  @ bucket(fill = water)    # transferrin iron, in hematocrit points it could build
+node stores        : range(0, 45),  init(19.07)  @ bucket(fill = squares)  # macrophage + liver iron, same unit
+node red_cells     : range(0, 80),  init(44.6)   @ bucket(fill = water, threshold = 47)   # hematocrit, %
+node hepcidin      : range(0, 20),  init(1.006)  @ bucket(fill = dots)     # the iron gate
+node ferroportin   : range(0, 3),   init(1.0)    @ bucket(fill = dots)     # the iron EXPORTER hepcidin destroys
+
+external kidney
+external clearance
+external marrow
+external turnover
+external diet
+external losses
+external liver
+external hep_clear
+external membrane
+external degraded
+external suppressed
+
+kidney        -> epo           : repress(of = red_cells, max = 300, k = 35, n = 8)   # the sensor still works
+epo           -> clearance     : proportional(of = epo, k = 3.3)
+
+# V617F: the erythroblast supply no longer reads EPO. Put `proportional(of = epo,
+# k = 5.0)` back to make this marrow healthy again.
+marrow        -> erythroblasts : constant(c = 61.0)
+erythroblasts -> turnover      : proportional(of = erythroblasts, k = 1.0)
+
+# THE MARROW EATS IRON AND RED CELLS ARE WHERE IT PUTS IT.
+plasma_iron   -> red_cells     : product(of = plasma_iron, by = erythroblasts, k = 0.1247)
+red_cells     -> stores        : proportional(of = red_cells, k = 0.00833)            # 120-day lifespan; macrophages keep the iron
+
+# THE GATE. hepcidin blocks release from stores and absorption from the gut alike.
+stores        -> plasma_iron   : product(of = stores, by = ferroportin, k = 0.01802)  # <<< rusfertide's real target
+diet          -> plasma_iron   : repress(of = hepcidin, max = 0.05, k = 1, n = 3)     # a trickle, and the only way in
+stores        -> losses        : proportional(of = stores, k = 0.0013)                # skin and gut shedding
+
+# AND THE MARROW SETS THE GATE: erythroferrone from erythroblasts suppresses hepcidin.
+# Raise max from 4 to 40 for rusfertide.
+# TWO INPUTS, AND LEAVING THE SECOND OUT BROKE THE FILE. Hepcidin is MADE in
+# proportion to how much iron is in the stores — a loaded liver shuts the gate — and
+# REMOVED in proportion to marrow demand, which is the erythroferrone arm. Written as
+# one edge reading demand only, the gate barely moved, maintenance phlebotomy came out
+# at one every sixteen months, and the stores never emptied. Iron deficiency itself
+# opens the gate, and that is most of why it opens.
+liver         -> hepcidin      : hill(of = stores, max = 4.0, k = 19.2, n = 2)
+hepcidin      -> hep_clear     : proportional(of = hepcidin, k = 1.0)
+hepcidin      -> suppressed    : product(of = hepcidin, by = erythroblasts, k = 0.0186)
+
+# FERROPORTIN is the pore iron leaves a cell through, and hepcidin's whole job is to
+# have it destroyed. Writing it as its own stock is what keeps the iron honest: the
+# release flow above now reads `stores`, so an empty store releases nothing. An
+# earlier draft had release depend on hepcidin alone, which quietly MANUFACTURED iron
+# once the stores hit zero and produced a perfectly steady 55-day phlebotomy rhythm
+# that was an artefact of the bug.
+membrane      -> ferroportin   : repress(of = hepcidin, max = 2.0, k = 1, n = 3)
+ferroportin   -> degraded      : proportional(of = ferroportin, k = 1.0)
+
+# ON THE STOCK: take blood out at a hematocrit of 55. The iron goes with it, because
+# the iron IS the red cells — no second rule needed.
+event phlebotomy : red_cells >= 47 : red_cells -= 4
+
+pathway iron_cycle : plasma_iron->red_cells, red_cells->stores, stores->plasma_iron, diet->plasma_iron, stores->losses
+pathway gate       : liver->hepcidin, hepcidin->hep_clear, hepcidin->suppressed, membrane->ferroportin, ferroportin->degraded

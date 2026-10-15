@@ -1,0 +1,56 @@
+# polycythemia vera — the loop is intact, and the marrow ignores it
+#
+# This is `erythropoiesis.strombild` with ONE EDGE changed. In the healthy marrow,
+# progenitors mature only with EPO: the flow is progenitors × EPO. In polycythemia
+# vera the kinase under the EPO receptor, JAK2, carries the V617F mutation and is on
+# whether or not EPO is there (Schaltwerk's `jak2-v617f` shows the brake that no
+# longer holds, molecule by molecule). At this level that is one deletion: the
+# dependency on EPO is gone from the maturation flow. It reads progenitors alone.
+#
+#     healthy:  progenitors -> red_cells : product(of = progenitors, by = epo, k = 0.00075)
+#     PV:       progenitors -> red_cells : proportional(of = progenitors, k = 0.011)
+#
+# Run it from the healthy steady state and watch what the loop does. The hematocrit
+# climbs — past 50, 55, 60 — and the kidney does exactly its job: it sees more oxygen
+# and turns EPO DOWN, to a fraction of normal. It is not broken. It is shouting
+# "enough" to a marrow that has stopped listening. That is why the diagnostic
+# signature of PV is HIGH red-cell mass with LOW EPO: the signal is intact and
+# ignored. A low EPO is the loop's fingerprint on the disease.
+#
+# Where it ends: hematocrit in the mid-sixties here, blood thick enough to clot, which
+# is how PV kills — stroke, heart attack, portal vein thrombosis. The standard first
+# treatment is PHLEBOTOMY: take blood out, again and again. The event below does that
+# at a hematocrit of 55 and shows the sawtooth: it treats the STOCK, not the mechanism,
+# so it never stops. A JAK2 inhibitor treats the edge (lower this file's k); that is a
+# different kind of intervention and the model can tell them apart.
+#
+# The OTHER disease of too many red cells is one parameter away, not one edge:
+# primary familial polycythemia (PFCP, the truncated receptor with no off switch —
+# Schaltwerk's `pfcp`). Its marrow still needs EPO, but gets more signal per EPO. In
+# the healthy file, triple the product's k: the hematocrit settles near 52 and EPO near
+# 4. Same outcome in words — high red cells, low EPO — different mechanism, and the
+# difference is testable: set the kidney's max to 0 in both. PFCP's red cells fall away
+# (it still depends on EPO). PV's do not move. Mechanism is what survives the experiment
+# that the outcome cannot distinguish.
+
+node epo         : range(0, 400), init(10) @ bucket(fill = water)   # plasma erythropoietin, mU/mL
+node progenitors : range(0, 400), init(50) @ bucket(fill = dots)    # erythroid precursors — the V617F clone
+node red_cells   : range(0, 80),  init(45) @ bucket(fill = water)   # red-cell mass as hematocrit, %
+
+external kidney
+external clearance
+external marrow
+external apoptosis
+external spleen
+
+kidney      -> epo         : repress(of = red_cells, max = 300, k = 35, n = 8)   # the sensor is fine
+epo         -> clearance   : proportional(of = epo, k = 3.3)
+marrow      -> progenitors : constant(c = 50.4)
+progenitors -> apoptosis   : proportional(of = progenitors, k = 1)
+progenitors -> red_cells   : proportional(of = progenitors, k = 0.011)           # V617F: maturation no longer reads EPO
+red_cells   -> spleen      : proportional(of = red_cells, k = 0.00833)
+
+# the treatment that works on the stock: take blood out when the hematocrit reaches 55
+event phlebotomy : red_cells >= 55 : red_cells -= 5
+
+pathway body : kidney->epo, epo->clearance, marrow->progenitors, progenitors->apoptosis, progenitors->red_cells, red_cells->spleen

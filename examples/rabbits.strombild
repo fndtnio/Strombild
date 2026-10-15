@@ -1,0 +1,59 @@
+# rabbits — what does a hunter actually do to a population?
+#
+# The smallest model that asks one question. Rabbits breed; hunters take some
+# off. Nothing else. No grass, no old age, no winter — those are deliberately
+# not here, and the model will tell you where they were missed.
+#
+#     burrow ──> RABBITS ──> larder
+#                  ^  \        ^
+#                  |   \       |
+#                (reads)     (reads hunters)
+#
+# TWO KINDS OF ARROW, and the whole model turns on the difference:
+#
+#   FLOW      solid.  Something moves. burrow -> rabbits is birth; rabbits ->
+#             larder is a kill. Mass leaves one end and arrives at the other.
+#   INFLUENCE dashed. Nothing moves; a number sets a speed. `hunters` never
+#             becomes a rabbit — it only sets how fast the kill flow runs. That
+#             is what `by = hunters` says, and why hunters has no edges at all.
+#
+# hunters is a HELD node — no flow in or out, it just sits at its level and gets
+# read (the glucose dial in mito-fuel). Drag it. That IS the experiment.
+#
+# k = 0.01 is one hunter's EFFECTIVENESS, and it is doing a lot of work: shots
+# missed, ground not walked, rabbits that got to the hedge first, the days
+# nobody went out. All of it collapses into one number, because the engine is
+# deterministic — it gives you the average season, never an unlucky Tuesday.
+#
+# WHAT TO LOOK FOR — the answer is sharper than it has any right to be.
+#   births = 0.30 · rabbits          kills = 0.01 · rabbits · hunters
+#   net    = rabbits · (0.30 − 0.01 · hunters)
+# `rabbits` factors straight out. So the sign of the net flow does not depend on
+# how many rabbits there are — only on the hunters:
+#
+#   hunters < 30   the population grows, forever, no matter how few rabbits
+#   hunters > 30   the population dies, all the way to zero, no matter how many
+#   hunters = 30   births and kills cancel — it sits wherever you started it
+#
+# Try 29, then 31. Not a dent and a bigger dent: growth and extinction. There is
+# no hunter count that holds the rabbits at a comfortable level — the knife edge
+# is a single value, and it is nowhere near the middle of the dial.
+#
+# WHERE THE MISSING PIECES SHOW UP:
+#   - Set hunters to 0 and the rabbits pin at range(0, 1000). That ceiling is
+#     the clamp, not biology. There is no grass in this model, so nothing but
+#     the range stops them — the model is reporting what was left out.
+#   - Push hunters high and the kill rate climbs without limit: at 800 rabbits,
+#     30 hunters take 240 a day. A hunter has daylight and two hands. Real
+#     predation SATURATES, and `product` cannot say so — hill(...) reads only
+#     one node, so it cannot saturate in rabbits AND scale with hunters. That is
+#     a genuine gap in the language, and this is the model that found it.
+
+node rabbits : range(0, 1000), init(200) @ bucket(fill = dots)
+node hunters : range(0, 60),   init(20)  @ bucket(fill = dots)   # the dial — no flows, read only
+
+external burrow    # birth: new rabbits, limited by nothing in this model
+external larder    # the one sink — every rabbit that leaves, leaves this way
+
+burrow  -> rabbits : proportional(of = rabbits, k = 0.30)              # breeding reads the stock it fills
+rabbits -> larder  : product(of = rabbits, by = hunters, k = 0.01)     # kill = effectiveness · rabbits · hunters

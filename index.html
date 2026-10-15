@@ -262,6 +262,7 @@
         <select class="tiny" id="exampleSel" title="load an example">
           <option value="tub2">tub · ode</option>
           <option value="tub1">tub · linear</option>
+          <option value="rabbits">rabbits · hunters (influence)</option>
           <option value="cafe">café</option>
           <option value="gene">gene</option>
           <option value="factory1">factory</option>
@@ -278,6 +279,12 @@
           <option value="bloodpressure">blood pressure · baroreflex</option>
           <option value="bpvolume">blood pressure · volume &amp; kidney</option>
           <option value="bpshock">blood pressure · shock (product)</option>
+          <option value="bone">bone · mechanostat</option>
+          <option value="vo2max">vo2max · two arms</option>
+          <option value="erythro">red cells · the EPO loop</option>
+          <option value="erythropv">red cells · polycythemia vera (one edge)</option>
+          <option value="clonalescape">red cells · clonal escape (PV over a lifetime)</option>
+          <option value="iron">red cells · iron, and what phlebotomy does</option>
         </select>
         <button class="tiny" id="openBtn">open…</button>
         <button class="tiny" id="specBtn" title="language reference">spec</button>
@@ -401,6 +408,26 @@ faucet -> tub  : constant(c = 3) @ pipe
 tub   -> drain : constant(c = 0.1) @ pipe
 
 pathway leaky_tub : faucet->tub, tub->drain
+`,
+  rabbits:
+`# rabbits — a FLOW moves something; an INFLUENCE only sets a speed
+# rabbits breed (a flow from the burrow, whose rate reads the stock it fills) and
+# hunters take some off (a flow to the larder, whose rate reads TWO nodes). hunters
+# is a HELD node: no edges at all — nothing flows into or out of it, it is only
+# READ. no hunter ever becomes a rabbit, so that arrow is dashed, not solid.
+# k = 0.01 is one hunter's effectiveness — misses, ground not walked, days nobody
+# went out, all collapsed into one number.
+# net = rabbits · (0.30 - 0.01 · hunters): the rabbits factor OUT, so the outcome
+# depends on the hunters alone. drag the dial past 30 and watch it flip.
+#   29 -> grows forever.  30 -> holds.  31 -> extinction. full notes in rabbits.strombild.
+node rabbits : range(0, 1000), init(200) @ bucket(fill = dots)
+node hunters : range(0, 60),   init(20)  @ bucket(fill = dots)   # the dial — read only
+
+external burrow    # birth: limited by nothing in this model (there is no grass)
+external larder    # the one sink
+
+burrow  -> rabbits : proportional(of = rabbits, k = 0.30)
+rabbits -> larder  : product(of = rabbits, by = hunters, k = 0.01)
 `,
   cafe:
 `# café — bistable: people draw people
@@ -755,7 +782,512 @@ pressure -> body     : proportional(of = pressure, k = 0.1)          # runoff
 nerves   -> pulse    : adjust(of = pressure, target = 93, k = 0.03)   # the baroreflex
 
 pathway resting : heart->pressure, pressure->body, nerves->pulse
-`
+`,
+  bone:
+`# bone — the skeleton defends a STRAIN, not a mass
+# "weight-bearing exercise is good for your bones" is an arrow with no interior.
+# here is the interior. bone is torn down and rebuilt continuously, and the crew
+# steers by MECHANICAL STRAIN — how far the bone bends under load, in microstrain.
+# Frost's MECHANOSTAT: below ~1500 µε the skeleton reads "over-built" and lets it
+# thin; above, formation switches on. the loop closes because STRAIN IS FORCE ÷ HOW
+# MUCH BONE THERE IS — thin bone strains more, which turns formation back on. so
+# what is defended is the strain; the mass is whatever it takes to hold it.
+# the stimulus is strain, not effort: swimming and cycling barely move the dial,
+# walking sits below it (~700 µε), running is near it, jumping and heavy lifting
+# are above it (~2500 µε). that is not a preference, it is a refutable claim about
+# which quantity the cell measures.
+# EXPERIMENT: 'load' is a held dial. 1500 -> mineral 100 (the setpoint, by
+#   definition). 500 (desk job) -> 65, and strain only falls to ~770, not to 500:
+#   the controller spends mass to defend strain. 2500 -> 122. 200 (bed rest) -> 60,
+#   the floor, which is the load-independent \`marrow\` arm and not a clamp.
+# ONE TICK ≈ ONE WEEK, and that is the lesson: resorption's k = 0.005 is a time
+#   constant near 200 ticks — FOUR YEARS to re-settle. under 10% of the change has
+#   happened at twelve weeks. whatever a twelve-week study measured, it was not this.
+# full notes in bone.strombild.
+node load    : range(0, 3000), init(1500) @ bucket(fill = water)  # THE DIAL: peak force through the bone
+node strain  : range(0, 5000), init(1500) @ bucket(fill = water)  # what the bone feels, µε — force ÷ bone
+node mineral : range(0, 150),  init(100)  @ bucket(fill = dots)   # bone mineral, % of the setpoint
+external ground      # ground reaction + muscle pull
+external stiffness   # strain the bone carries; more bone absorbs more
+external osteoblast  # the cells that lay bone down
+external osteoclast  # the cells that chew it up
+external marrow      # basal, load-independent remodeling — the floor
+
+ground     -> strain     : proportional(of = load, k = 2.0)               # the force arrives
+strain     -> stiffness  : product(of = strain, by = mineral, k = 0.02)   # thicker bone soaks up more → strain = load / bone
+osteoblast -> mineral    : hill(of = strain, max = 0.4, k = 1500, n = 4)  # THE MECHANOSTAT
+marrow     -> mineral    : constant(c = 0.3)                              # basal formation — no load required
+mineral    -> osteoclast : proportional(of = mineral, k = 0.005)          # resorption; τ ≈ 200 ticks ≈ 4 years
+
+pathway remodeling : ground->strain, strain->stiffness, osteoblast->mineral, marrow->mineral, mineral->osteoclast
+`,
+  vo2max:
+`# vo2max — two arms on two clocks, multiplied
+# Fick says VO2max is a PRODUCT: cardiac output × (a-v)O2 difference — DELIVERY
+# (central: blood volume -> stroke volume) times EXTRACTION (peripheral:
+# mitochondria + capillaries). max out either alone and you get a mediocre number,
+# because the other is the ceiling. that is the argument for training both, and it
+# is structural — it falls out of the ×, not out of a study.
+# INTENSITY IS A THRESHOLD, VOLUME IS A DOSE. delivery needs sessions near maximal
+# cardiac output (below ~70% there is little stimulus); extraction just wants hours,
+# roughly linearly. that is the model's real claim and it is refutable.
+# EXPERIMENT: two dials — intensity (% of VO2max the hard sessions hit) and volume
+#   (hours/week).  40/1 sedentary -> 33.  40/12 volume only -> 43 (+10).
+#   95/1 intensity only -> 40 (+7).  95/12 both -> 53 (+20).
+#   +10 and +7 alone, +20 together: the combination beats the SUM of the parts,
+#   which is what a product does and a sum cannot. polarized training, derived.
+# TWO CLOCKS: stop entirely from a trained 45 and two weeks costs ~7%, nearly all
+#   of it the fast delivery arm, back in a month. twelve weeks costs ~22% and takes
+#   four months to rebuild. a vacation is not a setback; a season is.
+# ONE TICK = ONE WEEK. full notes (and the stated holes) in vo2max.strombild.
+node intensity : range(0, 100), init(85)   @ bucket(fill = water)  # DIAL: % of VO2max the hard sessions hit
+node volume    : range(0, 15),  init(6)    @ bucket(fill = water)  # DIAL: hours/week of aerobic work
+node plasma    : range(0, 8),   init(4.79) @ bucket(fill = water)  # DELIVERY — τ = 4 wk, fast on and fast off
+node mito      : range(0, 8),   init(4.69) @ bucket(fill = dots)   # EXTRACTION — τ = 16 wk, slow both ways
+node vo2max    : range(0, 80),  init(45)   @ bucket(fill = dots)   # ml/kg/min — the readout
+external cardiac_stress  # repeated near-maximal cardiac output
+external aerobic_load    # time under aerobic load
+external baseline        # what an untrained body already has
+external renal           # plasma volume given back when the stimulus stops
+external mitophagy       # mitochondria turn over whether you train or not
+external fick            # NOT physiology: vo2max is a product, not a stock
+external measured
+
+cardiac_stress -> plasma : hill(of = intensity, max = 0.26, k = 70, n = 6)  # THRESHOLD
+baseline       -> plasma : constant(c = 1.0)                                # untrained blood volume
+plasma         -> renal  : proportional(of = plasma, k = 0.25)              # τ = 4 weeks
+
+aerobic_load -> mito      : proportional(of = volume, k = 0.0072)           # DOSE, no threshold
+baseline     -> mito      : constant(c = 0.25)                              # untrained density
+mito         -> mitophagy : proportional(of = mito, k = 0.0625)             # τ = 16 weeks
+
+fick   -> vo2max   : product(of = plasma, by = mito, k = 8.0)               # FICK: delivery × extraction
+vo2max -> measured : proportional(of = vo2max, k = 4.0)                     # fast readout
+
+pathway training : cardiac_stress->plasma, baseline->plasma, plasma->renal, aerobic_load->mito, baseline->mito, mito->mitophagy, fick->vo2max, vo2max->measured
+`,
+  erythro:
+`# erythropoiesis — the loop that sets how much blood you have
+#
+# Your red-cell mass is held, like your blood pressure, by a loop. The sensor is the
+# KIDNEY: cells there read how much oxygen reaches them, and when it is short they
+# secrete EPO (erythropoietin). EPO's job is to let erythroid PROGENITORS in the
+# marrow live: without it they die within a day; with it they survive, divide and
+# mature into RED CELLS, which carry oxygen — including to the kidney, which then
+# makes less EPO. Red cells live about 120 days and are removed by the spleen. That
+# is the whole loop, and it is negative: more red cells -> less EPO -> fewer red cells.
+#
+# The chain, in the language's shapes:
+#   • kidney -> epo is a REPRESSION — EPO production is high when red cells are few
+#     and falls steeply as they rise (\`repress\` is the inhibitory hill; its \`k\` is the
+#     hematocrit at which production is half-maximal). The real curve is steeper still
+#     (EPO rises roughly tenfold for every few grams of hemoglobin lost); this one
+#     tops out near 90 mU/mL. The shape is right, the ceiling is modest.
+#   • EPO is cleared with a half-life of about five hours (k = 3.3 per day).
+#   • stem cells feed progenitors at a steady rate the loop does not control.
+#   • progenitors -> red_cells is a PRODUCT: how many mature is progenitors × EPO.
+#     That multiplication IS the mechanism. EPO does not make progenitors; it keeps
+#     them from dying. Set EPO to zero and the flow is zero, whatever the marrow holds.
+#   • progenitors -> apoptosis: the default fate, a day's half-life. Most progenitors
+#     die at normal EPO. That waste is the reserve the loop draws on in anemia.
+#
+# Time is in DAYS. It settles where it should: hematocrit 45%, EPO 10 mU/mL.
+#
+# Experiments on the source:
+#   • bleed: set red_cells' init to 30. EPO doubles within a day, the marrow's output
+#     rises, and the hematocrit is back near 45 in about three weeks — then EPO falls
+#     back to 10. The loop defends the stock, and it uses EPO as the signal, not the
+#     material.
+#   • kidney failure: set repress's max to 0. EPO drains in a day; the progenitors
+#     keep arriving and keep dying; red cells fall away over months with nothing to
+#     replace them. The anemia of chronic kidney disease, and why the treatment is
+#     recombinant EPO (a constant inflow to \`epo\` — add \`drug -> epo : constant(c)\`).
+#   • the two diseases of too many red cells live in \`erythropoiesis-pv.strombild\`,
+#     and they are one edge away from this file.
+#
+# What this does NOT model: iron (hemoglobin needs it; the marrow can be EPO-rich and
+# iron-poor), the residual EPO the liver makes, the seven-day maturation delay as more
+# than the progenitor stock's residence time, and oxygen itself as a stock (the kidney
+# here reads the hematocrit directly; at altitude or with lung disease it reads less
+# oxygen at the same hematocrit, which the \`repress\` k would have to shift to show).
+
+node epo         : range(0, 400), init(10) @ bucket(fill = water)   # plasma erythropoietin, mU/mL
+node progenitors : range(0, 400), init(50) @ bucket(fill = dots)    # EPO-dependent erythroid precursors in the marrow
+node red_cells   : range(0, 80),  init(45) @ bucket(fill = water)   # red-cell mass as hematocrit, %
+
+external kidney      # EPO source — the oxygen sensor
+external clearance   # EPO sink — receptor uptake and the liver
+external marrow      # stem cells committing to the red line
+external apoptosis   # progenitors that got no EPO
+external spleen      # old red cells removed
+
+kidney      -> epo         : repress(of = red_cells, max = 300, k = 35, n = 8)       # less oxygen, more EPO — steeply
+epo         -> clearance   : proportional(of = epo, k = 3.3)                          # half-life about five hours
+marrow      -> progenitors : constant(c = 50.4)                                       # commitment the loop does not control
+progenitors -> apoptosis   : proportional(of = progenitors, k = 1)                    # the default fate: die within a day
+progenitors -> red_cells   : product(of = progenitors, by = epo, k = 0.00075)         # survive and mature ONLY with EPO
+red_cells   -> spleen      : proportional(of = red_cells, k = 0.00833)                # a 120-day life
+
+pathway body : kidney->epo, epo->clearance, marrow->progenitors, progenitors->apoptosis, progenitors->red_cells, red_cells->spleen`,
+  erythropv:
+`# polycythemia vera — the loop is intact, and the marrow ignores it
+#
+# This is \`erythropoiesis.strombild\` with ONE EDGE changed. In the healthy marrow,
+# progenitors mature only with EPO: the flow is progenitors × EPO. In polycythemia
+# vera the kinase under the EPO receptor, JAK2, carries the V617F mutation and is on
+# whether or not EPO is there (Schaltwerk's \`jak2-v617f\` shows the brake that no
+# longer holds, molecule by molecule). At this level that is one deletion: the
+# dependency on EPO is gone from the maturation flow. It reads progenitors alone.
+#
+#     healthy:  progenitors -> red_cells : product(of = progenitors, by = epo, k = 0.00075)
+#     PV:       progenitors -> red_cells : proportional(of = progenitors, k = 0.011)
+#
+# Run it from the healthy steady state and watch what the loop does. The hematocrit
+# climbs — past 50, 55, 60 — and the kidney does exactly its job: it sees more oxygen
+# and turns EPO DOWN, to a fraction of normal. It is not broken. It is shouting
+# "enough" to a marrow that has stopped listening. That is why the diagnostic
+# signature of PV is HIGH red-cell mass with LOW EPO: the signal is intact and
+# ignored. A low EPO is the loop's fingerprint on the disease.
+#
+# Where it ends: hematocrit in the mid-sixties here, blood thick enough to clot, which
+# is how PV kills — stroke, heart attack, portal vein thrombosis. The standard first
+# treatment is PHLEBOTOMY: take blood out, again and again. The event below does that
+# at a hematocrit of 55 and shows the sawtooth: it treats the STOCK, not the mechanism,
+# so it never stops. A JAK2 inhibitor treats the edge (lower this file's k); that is a
+# different kind of intervention and the model can tell them apart.
+#
+# The OTHER disease of too many red cells is one parameter away, not one edge:
+# primary familial polycythemia (PFCP, the truncated receptor with no off switch —
+# Schaltwerk's \`pfcp\`). Its marrow still needs EPO, but gets more signal per EPO. In
+# the healthy file, triple the product's k: the hematocrit settles near 52 and EPO near
+# 4. Same outcome in words — high red cells, low EPO — different mechanism, and the
+# difference is testable: set the kidney's max to 0 in both. PFCP's red cells fall away
+# (it still depends on EPO). PV's do not move. Mechanism is what survives the experiment
+# that the outcome cannot distinguish.
+
+node epo         : range(0, 400), init(10) @ bucket(fill = water)   # plasma erythropoietin, mU/mL
+node progenitors : range(0, 400), init(50) @ bucket(fill = dots)    # erythroid precursors — the V617F clone
+node red_cells   : range(0, 80),  init(45) @ bucket(fill = water)   # red-cell mass as hematocrit, %
+
+external kidney
+external clearance
+external marrow
+external apoptosis
+external spleen
+
+kidney      -> epo         : repress(of = red_cells, max = 300, k = 35, n = 8)   # the sensor is fine
+epo         -> clearance   : proportional(of = epo, k = 3.3)
+marrow      -> progenitors : constant(c = 50.4)
+progenitors -> apoptosis   : proportional(of = progenitors, k = 1)
+progenitors -> red_cells   : proportional(of = progenitors, k = 0.011)           # V617F: maturation no longer reads EPO
+red_cells   -> spleen      : proportional(of = red_cells, k = 0.00833)
+
+# the treatment that works on the stock: take blood out when the hematocrit reaches 55
+event phlebotomy : red_cells >= 55 : red_cells -= 5
+
+pathway body : kidney->epo, epo->clearance, marrow->progenitors, progenitors->apoptosis, progenitors->red_cells, red_cells->spleen`,
+  clonalescape:
+`# clonal escape — why a mutation you got as a child becomes a disease at sixty
+#
+# \`erythropoiesis-pv.strombild\` models POLYCYTHEMIA VERA AS AN END STATE: one edge
+# already rewired, a marrow that already ignores EPO. It is right about the steady
+# state and silent about the forty years before it, which is the part that makes the
+# disease strange. THIS FILE MODELS THOSE FORTY YEARS.
+#
+# THE PUZZLE. PV is "genetic" — a point mutation, JAK2 V617F. So you would expect
+# children with too many red cells. You do not get that. Median age at diagnosis is
+# about sixty. Meanwhile most people who carry a low-level V617F clone never develop
+# PV at all. A germline defect does not behave like this: when the broken gene is in
+# every cell from conception, the disease arrives in childhood — which is exactly what
+# familial erythrocytosis (Schaltwerk's \`pfcp\`, a truncated EPO receptor) does.
+#
+# THE RESOLUTION, AND THE HYPOTHESIS THIS FILE MAKES RUNNABLE. V617F is SOMATIC: it
+# happens in ONE blood stem cell, in one person, during their life. Lineage-tracing
+# work published in 2022 dated that event to childhood or before birth in the patients
+# studied — so the mutation often IS early. What takes decades is the CLONE. One cell
+# with a small self-renewal advantage has to grow into a large fraction of the marrow
+# before the blood count moves.
+#
+#     the disease is not the mutation.
+#     the disease is the mutation x the share of your marrow descended from it x time.
+#
+# A share and a rate: stock and flow. So the natural history is the model.
+#
+# THE DIAL IS THE \`k\` ON THE NICHE EDGE. It is how much faster the mutant stem cell
+# renews than its wild-type neighbours, and it competes against \`drift\`, the rate at
+# which a small clone loses its share again. With a niche of 100, a small clone's net
+# growth rate is \`100k - drift\` per year, so the escape condition is just \`100k > drift\`.
+#
+# TURN ONLY THAT NUMBER AND THE WHOLE NATURAL HISTORY MOVES. Everything below is the
+# model's own output, mutation fixed at age 10, nothing else touched:
+#
+#     k        net/yr   clone at 85    hematocrit    blood count    meets PV
+#                          (% niche)       at 85       looks odd     criteria
+#     0.0004   -0.01         0.0           45.0          never        never
+#     0.0008   +0.03         0.1           45.0          never        never
+#     0.0012   +0.07         1.8           45.2          never        never
+#     0.0018   +0.13        50.6           53.2         age 74       age 83
+#     0.0024   +0.19        78.8           63.9         age 54       age 60
+#     0.0035   +0.30        85.7           67.5         age 38       age 41
+#     0.0050   +0.45        90.0           69.8         age 29       age 31
+#
+# THERE ARE THREE OUTCOMES, NOT TWO, AND THE MIDDLE ONE IS THE INTERESTING ONE.
+#   * NO ESCAPE (k below 0.0005). The clone never gets going. Nothing to find.
+#   * ESCAPE WITHOUT DISEASE (k around 0.0008 to 0.0012). The clone is real, growing,
+#     and detectable by a sensitive assay — and the blood count is normal for life.
+#     THIS IS CLONAL HEMATOPOIESIS, and it is most of the people who carry V617F. The
+#     model did not need a second mechanism to produce them. Same mutation, same
+#     physiology, a slightly smaller advantage, and the disease simply runs out of
+#     lifetime. That is the file's main claim.
+#   * DISEASE (k above about 0.0018). The clone crosses into a moving blood count, and
+#     the age at which it does is set by the dial.
+#
+# THE SHIPPED VALUE, k = 0.0024, PUTS THE PV CRITERIA AT AGE 60. The median age at
+# diagnosis of polycythemia vera is about sixty. That was not fitted to it — it is
+# where a plausible growth rate lands, and it is the one number here worth taking
+# seriously as a prediction. AGE OF ONSET IS AN OUTPUT IN THIS FILE, NOT A SETTING.
+#
+# AND THE SENSITIVITY IS THE WARNING. Doubling the dial from 0.0018 to 0.0035 moves
+# first abnormality from age 74 to age 38. A model this steep cannot predict an
+# individual's onset from a loosely-estimated advantage, and saying so is the point:
+# it tells you how well that number would have to be measured to be worth anything.
+#
+# WHAT THIS FILE DOES NOT CLAIM.
+#   * The niche edge is BOOKKEEPING FOR COMPETITION, not a conversion. Mutant cells do
+#     not turn neighbours mutant; they out-renew them for a fixed number of niche
+#     slots, and \`normal_hsc -> mutant_hsc\` is how a fixed-total displacement is
+#     written with stocks. The logistic shape is the claim; the arrow's direction of
+#     travel is an accounting choice.
+#   * CLONE EXPANSION IS DETERMINISTIC HERE AND IS A STOCHASTIC PROCESS IN A PERSON.
+#     A clone's early life is a handful of cells, where chance dominates and \`drift\`
+#     is a smooth stand-in for a coin flip. So this file can say WHETHER a given
+#     advantage escapes on average. It cannot give the probability that it does, and
+#     the real answer to "why do most carriers never get PV" may be mostly that
+#     probability. See \`holes\` on Nordstern's \`polycythaemia-vera\`.
+#   * The mutant fraction of progenitors is taken to EQUAL the stem-cell clone
+#     fraction. Declared, not derived.
+#   * TIME IS IN YEARS, so EPO and the progenitor pool are run far slower than life.
+#     Real EPO has a half-life of about five hours and these constants equilibrate it
+#     in weeks. On a decade scale that is still instantaneous, so the slow curves are
+#     right and anything inside a month in this file is not.
+#   * No treatment. This is the untreated natural history on purpose — the whole point
+#     is the age the line is crossed. \`erythropoiesis-pv.strombild\` has the phlebotomy.
+#
+# THE MISSING DATA, STATED. To predict a real person's age of onset you would need
+# their advantage, and nobody measures it. What is measurable is allele burden at two
+# timepoints, which gives the growth rate directly. That measurement, in carriers
+# rather than patients, is the experiment this model is asking for.
+
+node age         : range(0, 90),  init(0)  @ box(fill = squares)                    # years lived
+node normal_hsc  : range(0, 100), init(100) @ bucket(fill = dots)                   # wild-type stem cells, % of niche
+node mutant_hsc  : range(0, 100), init(0)  @ bucket(fill = squares)                 # the V617F clone, % of niche
+node epo         : range(0, 120), init(10) @ bucket(fill = water)                   # plasma erythropoietin, mU/mL
+node progenitors : range(0, 200), init(50) @ bucket(fill = dots)                    # erythroid precursors
+node red_cells   : range(0, 80),  init(45) @ bucket(fill = water, threshold = 48)   # red-cell mass as hematocrit, %
+
+node mutated     : range(0, 1), init(0) @ box     # latches when the mutation happens
+node noticed     : range(0, 1), init(0) @ box     # latches at a hematocrit a blood count would flag
+node diagnosable : range(0, 1), init(0) @ box     # latches at a hematocrit that meets the PV threshold
+node clot_zone   : range(0, 1), init(0) @ box     # latches where viscosity drives thrombotic risk
+
+external lifetime     # the clock
+external kidney
+external clearance
+external marrow
+external apoptosis
+external spleen
+
+lifetime    -> age         : constant(c = 1)                                            # one year per year
+
+# THE CLONE. logistic displacement in a fixed niche, against loss by drift.
+normal_hsc  -> mutant_hsc  : product(of = normal_hsc, by = mutant_hsc, k = 0.0024)      # <<< THE DIAL
+mutant_hsc  -> normal_hsc  : proportional(of = mutant_hsc, k = 0.05)                    # drift
+
+# THE LOOP, unchanged in structure from \`erythropoiesis.strombild\`.
+kidney      -> epo         : repress(of = red_cells, max = 1700, k = 35, n = 8)         # the sensor is fine
+epo         -> clearance   : proportional(of = epo, k = 20)
+marrow      -> progenitors : constant(c = 1137)
+progenitors -> apoptosis   : proportional(of = progenitors, k = 20)
+
+# TWO MATURATION EDGES, AND THE CLONE SETS THE SECOND ONE'S WEIGHT.
+# wild-type precursors mature only with EPO. V617F precursors signal as though EPO
+# were bound when it is not, so their edge reads the clone and ignores the hormone.
+progenitors -> red_cells   : product(of = progenitors, by = epo, k = 0.274)             # EPO-dependent
+progenitors -> red_cells   : product(of = progenitors, by = mutant_hsc, k = 0.050)      # EPO-independent
+
+red_cells   -> spleen      : proportional(of = red_cells, k = 3.04)                     # 120-day lifespan
+
+event mutation    : age >= 10 & mutated == 0     : mutated = 1, mutant_hsc += 0.01, normal_hsc -= 0.01
+event notice      : red_cells >= 48 & noticed == 0     : noticed = 1
+event meets_criteria : red_cells >= 52 & diagnosable == 0 : diagnosable = 1
+event thrombotic  : red_cells >= 55 & clot_zone == 0   : clot_zone = 1
+
+pathway clone : normal_hsc->mutant_hsc, mutant_hsc->normal_hsc
+pathway blood : kidney->epo, epo->clearance, marrow->progenitors, progenitors->apoptosis, red_cells->spleen`,
+
+  iron:
+`# iron — what phlebotomy actually does, and why it never stops
+#
+# \`erythropoiesis.strombild\` has erythroblasts mature when EPO says so and is silent
+# about what they are made OF. Hemoglobin is iron, the body holds only a few grams of
+# it, and in polycythemia vera it is the material that runs out. This file is the
+# supply side.
+#
+# THE UNIT IS THE TRICK. Iron is measured in HEMATOCRIT POINTS IT COULD BUILD rather
+# than in milligrams. One hematocrit point of red cells carries roughly 53 mg of
+# iron, so the whole file runs in one currency and two things fall out for free. Iron
+# consumed by the marrow equals red cells produced. And PHLEBOTOMY NEEDS NO IRON RULE:
+# the iron is inside the red cells, so taking 4 points of hematocrit out takes 4
+# points of iron with it. The event below says \`red_cells -= 4\` and nothing about
+# iron, and that is the whole point.
+#
+# TWO POOLS AND A GATE.
+#   plasma_iron — iron on transferrin, the only iron the marrow can use. TINY, turns
+#                 over several times a day.
+#   stores      — macrophage and liver iron, where dead red cells put theirs. LARGE.
+#   hepcidin    — the gate. It blocks iron LEAVING stores and ENTERING from the gut,
+#                 by having ferroportin destroyed.
+# Iron is RECYCLED, not consumed: a red cell lives 120 days, a macrophage eats it, the
+# iron comes back. Diet contributes about a fifteenth of the daily throughput. **So
+# the body is a nearly closed loop with a small leak**, which is why losing blood is
+# expensive and losing it repeatedly is ruinous.
+#
+# HEPCIDIN HAS TWO INPUTS AND BOTH MATTER. It is MADE in proportion to how loaded the
+# stores are, and REMOVED in proportion to marrow demand (the erythroferrone arm). So
+# an over-driven marrow opens the gate, and **so does iron deficiency itself.** Take
+# blood out and the body turns its own iron supply up: it fights the treatment.
+#
+# WHAT THE SHIPPED FILE DOES. PV marrow, phlebotomy on, started at the healthy steady
+# state and held near the real clinical target. Every number below is this file's
+# output, over 2500 days:
+#
+#     phlebotomy interval, first        73 days
+#     phlebotomy interval, settled     130 days
+#     iron stores, start / settled      19.1 -> 11.1
+#     hepcidin, start / settled          1.0 -> 0.47
+#
+# **THE INTERVAL LENGTHENS BECAUSE THE IRON IS GONE.** The register's own prose for
+# this disease reads "venesection every few weeks at first and every few months once
+# stable", and that lengthening is an OUTPUT here, not a setting. It comes from iron
+# alone: once the stores are low the marrow is waiting on absorption from the gut,
+# which is a trickle.
+#
+# THE THREE LEVERS, AND THE FILE'S REAL LESSON. Each is one edit.
+#
+#   ON THE STOCK — phlebotomy. The event. Removes red cells that already exist, and
+#     their iron with them. WORKS, and never stops.
+#
+#   ON THE SUBSTRATE — rusfertide, a hepcidin mimetic, approved 2026-08-28. Raise the
+#     hepcidin edge's \`max\` from 4.0 to 4.3. The phlebotomies STOP, the hematocrit
+#     holds at 43.5 to 44.7, and **the stores stay full at 19.2 instead of falling to
+#     11.** That contrast is the drug's whole clinical case: it holds the hematocrit
+#     without stripping the patient's iron — functional restriction rather than true
+#     deficiency, which is also why it acts in weeks rather than waiting for stores to
+#     empty.
+#     THE WINDOW IS NARROW AND THAT IS HONEST BUT OVERSTATED. 4.2 to 4.3 works; 4.4
+#     undershoots to a hematocrit of 40 and 5.0 reaches 25, which is anaemia. Anaemia
+#     IS rusfertide's dose-limiting toxicity and the drug IS titrated weekly, so the
+#     shape is right. The sharpness is not: see below.
+#
+#   ON THE EDGE — a JAK2 inhibitor. Lower the maturation \`k\` from 0.1247. **IT DOES
+#     NOTHING. At any dose.** Down to 0.02, a sixth of normal, the hematocrit, the
+#     stores and the phlebotomy interval are unchanged to three figures. The only
+#     thing that moves is \`plasma_iron\`, which backs UP because a slower marrow takes
+#     it more slowly.
+#
+# THAT NULL RESULT IS THE MOST USEFUL THING IN THE FILE. **A model with ONE binding
+# constraint can only ever report "inert" or "decisive", never "therapeutic."** Here
+# iron supply is the only brake, so pushing on the marrow is inert and pushing on iron
+# is nearly decisive — which is also why the rusfertide window came out so sharp.
+# \`erythropoiesis-pv.strombild\` has the mirror-image fault: the marrow edge is the
+# only brake there and iron does not exist, so the edge lever works and this one
+# cannot be asked about. **Neither file can tell you which constraint binds in a
+# patient, and that is the question a clinician actually has.** Merging them is the
+# next rung and it is not a refinement, it is the point.
+#
+# WHAT ELSE THIS FILE DOES NOT CLAIM.
+#   * Untreated, with the event deleted, the hematocrit here reaches only about 48 and
+#     rings slowly, where the disease reaches the sixties. Iron caps it, for the reason
+#     above. Read \`erythropoiesis-pv.strombild\` for the plateau and
+#     \`clonal-escape.strombild\` for why the climb takes decades.
+#   * **The induction phase is missing**, and the reason is the language rather than
+#     the biology. A newly diagnosed patient gets several units in a few weeks to come
+#     down from the sixties. A Strombild event is edge-triggered, so it fires once and
+#     waits for its guard to go false; it cannot repeat while the hematocrit is still
+#     above target. So this file starts a patient already at target and models
+#     MAINTENANCE only.
+#   * No erythroferrone stock. The marrow's suppression of hepcidin is written as
+#     demand removing hepcidin directly, one step collapsed.
+#   * The EPO sensor keeps the steep exponent from the earlier files and can ring on
+#     a timescale of years. Treat small slow oscillations as the integrator and the
+#     Hill, not as physiology.
+#   * Nothing here is the clone. This file starts after the marrow has stopped
+#     listening and asks only what it is building with.
+#
+node epo           : range(0, 400), init(10)     @ bucket(fill = water)    # plasma EPO, mU/mL
+node erythroblasts : range(0, 400), init(53.7)   @ bucket(fill = dots)     # marrow erythroid activity
+node plasma_iron   : range(0, 3),   init(0.056)  @ bucket(fill = water)    # transferrin iron, in hematocrit points it could build
+node stores        : range(0, 45),  init(19.07)  @ bucket(fill = squares)  # macrophage + liver iron, same unit
+node red_cells     : range(0, 80),  init(44.6)   @ bucket(fill = water, threshold = 47)   # hematocrit, %
+node hepcidin      : range(0, 20),  init(1.006)  @ bucket(fill = dots)     # the iron gate
+node ferroportin   : range(0, 3),   init(1.0)    @ bucket(fill = dots)     # the iron EXPORTER hepcidin destroys
+
+external kidney
+external clearance
+external marrow
+external turnover
+external diet
+external losses
+external liver
+external hep_clear
+external membrane
+external degraded
+external suppressed
+
+kidney        -> epo           : repress(of = red_cells, max = 300, k = 35, n = 8)   # the sensor still works
+epo           -> clearance     : proportional(of = epo, k = 3.3)
+
+# V617F: the erythroblast supply no longer reads EPO. Put \`proportional(of = epo,
+# k = 5.0)\` back to make this marrow healthy again.
+marrow        -> erythroblasts : constant(c = 61.0)
+erythroblasts -> turnover      : proportional(of = erythroblasts, k = 1.0)
+
+# THE MARROW EATS IRON AND RED CELLS ARE WHERE IT PUTS IT.
+plasma_iron   -> red_cells     : product(of = plasma_iron, by = erythroblasts, k = 0.1247)
+red_cells     -> stores        : proportional(of = red_cells, k = 0.00833)            # 120-day lifespan; macrophages keep the iron
+
+# THE GATE. hepcidin blocks release from stores and absorption from the gut alike.
+stores        -> plasma_iron   : product(of = stores, by = ferroportin, k = 0.01802)  # <<< rusfertide's real target
+diet          -> plasma_iron   : repress(of = hepcidin, max = 0.05, k = 1, n = 3)     # a trickle, and the only way in
+stores        -> losses        : proportional(of = stores, k = 0.0013)                # skin and gut shedding
+
+# AND THE MARROW SETS THE GATE: erythroferrone from erythroblasts suppresses hepcidin.
+# Raise max from 4 to 40 for rusfertide.
+# TWO INPUTS, AND LEAVING THE SECOND OUT BROKE THE FILE. Hepcidin is MADE in
+# proportion to how much iron is in the stores — a loaded liver shuts the gate — and
+# REMOVED in proportion to marrow demand, which is the erythroferrone arm. Written as
+# one edge reading demand only, the gate barely moved, maintenance phlebotomy came out
+# at one every sixteen months, and the stores never emptied. Iron deficiency itself
+# opens the gate, and that is most of why it opens.
+liver         -> hepcidin      : hill(of = stores, max = 4.0, k = 19.2, n = 2)
+hepcidin      -> hep_clear     : proportional(of = hepcidin, k = 1.0)
+hepcidin      -> suppressed    : product(of = hepcidin, by = erythroblasts, k = 0.0186)
+
+# FERROPORTIN is the pore iron leaves a cell through, and hepcidin's whole job is to
+# have it destroyed. Writing it as its own stock is what keeps the iron honest: the
+# release flow above now reads \`stores\`, so an empty store releases nothing. An
+# earlier draft had release depend on hepcidin alone, which quietly MANUFACTURED iron
+# once the stores hit zero and produced a perfectly steady 55-day phlebotomy rhythm
+# that was an artefact of the bug.
+membrane      -> ferroportin   : repress(of = hepcidin, max = 2.0, k = 1, n = 3)
+ferroportin   -> degraded      : proportional(of = ferroportin, k = 1.0)
+
+# ON THE STOCK: take blood out at a hematocrit of 55. The iron goes with it, because
+# the iron IS the red cells — no second rule needed.
+event phlebotomy : red_cells >= 47 : red_cells -= 4
+
+pathway iron_cycle : plasma_iron->red_cells, red_cells->stores, stores->plasma_iron, diet->plasma_iron, stores->losses
+pathway gate       : liver->hepcidin, hepcidin->hep_clear, hepcidin->suppressed, membrane->ferroportin, ferroportin->degraded`,
 };
 
 /* ── permalink: the model travels in the URL ────────────────────────────────

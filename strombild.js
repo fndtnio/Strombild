@@ -19,6 +19,11 @@ const RATE_LAWS = {
   constant:     { required: ["c"],             reads: false },
   proportional: { required: ["k"],             reads: true  },
   hill:         { required: ["max", "k", "n"], reads: true  },
+  // the inhibitory Hill: max * k^n / (k^n + of^n). Full at of = 0, half at of = k,
+  // falling to 0 as `of` grows. The shape of a production REPRESSED by what it
+  // produces — the kidney's EPO against the red cells it causes. Forced by
+  // erythropoiesis: no existing law decreases with the node it reads.
+  repress:      { required: ["max", "k", "n"], reads: true  },
   // soft backpressure: proportional to the source, but throttled as the
   // *destination* fills — k * of * (room left in dest). Flow falls to 0 at a
   // full destination, so the queue backs up in the source instead of mass
@@ -539,6 +544,10 @@ class Engine {
       case "hill": {
         const x = this.readOf(edge), n = +p.n;
         return p.max * Math.pow(x, n) / (Math.pow(p.k, n) + Math.pow(x, n));
+      }
+      case "repress": {
+        const x = Math.max(0, this.readOf(edge)), n = +p.n, kn = Math.pow(p.k, n);
+        return p.max * kn / (kn + Math.pow(x, n));
       }
       case "gated": {
         // headroom in [0,1]: 1 when the destination is empty, 0 when full

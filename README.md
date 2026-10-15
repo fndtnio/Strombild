@@ -129,6 +129,11 @@ node --test
 - `examples/blood-pressure.strombild` — the baroreflex as stocks and flows: the
   mechanism, not just the number on the cuff.
 
+- `examples/erythropoiesis.strombild` and `erythropoiesis-pv.strombild` — the red-cell
+  loop (kidney → EPO → marrow → red cells → kidney), and polycythemia vera as the same
+  model with one edge's dependency on EPO deleted: high red cells, low EPO, a
+  phlebotomy sawtooth. The molecular end of the same story is in `../Schaltwerk`.
+
 ## Embedding
 
 A viewer loads any example by name; a bare filename resolves against `examples/`:

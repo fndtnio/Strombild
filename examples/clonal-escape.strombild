@@ -1,0 +1,137 @@
+# clonal escape — why a mutation you got as a child becomes a disease at sixty
+#
+# `erythropoiesis-pv.strombild` models POLYCYTHEMIA VERA AS AN END STATE: one edge
+# already rewired, a marrow that already ignores EPO. It is right about the steady
+# state and silent about the forty years before it, which is the part that makes the
+# disease strange. THIS FILE MODELS THOSE FORTY YEARS.
+#
+# THE PUZZLE. PV is "genetic" — a point mutation, JAK2 V617F. So you would expect
+# children with too many red cells. You do not get that. Median age at diagnosis is
+# about sixty. Meanwhile most people who carry a low-level V617F clone never develop
+# PV at all. A germline defect does not behave like this: when the broken gene is in
+# every cell from conception, the disease arrives in childhood — which is exactly what
+# familial erythrocytosis (Schaltwerk's `pfcp`, a truncated EPO receptor) does.
+#
+# THE RESOLUTION, AND THE HYPOTHESIS THIS FILE MAKES RUNNABLE. V617F is SOMATIC: it
+# happens in ONE blood stem cell, in one person, during their life. Lineage-tracing
+# work published in 2022 dated that event to childhood or before birth in the patients
+# studied — so the mutation often IS early. What takes decades is the CLONE. One cell
+# with a small self-renewal advantage has to grow into a large fraction of the marrow
+# before the blood count moves.
+#
+#     the disease is not the mutation.
+#     the disease is the mutation x the share of your marrow descended from it x time.
+#
+# A share and a rate: stock and flow. So the natural history is the model.
+#
+# THE DIAL IS THE `k` ON THE NICHE EDGE. It is how much faster the mutant stem cell
+# renews than its wild-type neighbours, and it competes against `drift`, the rate at
+# which a small clone loses its share again. With a niche of 100, a small clone's net
+# growth rate is `100k - drift` per year, so the escape condition is just `100k > drift`.
+#
+# TURN ONLY THAT NUMBER AND THE WHOLE NATURAL HISTORY MOVES. Everything below is the
+# model's own output, mutation fixed at age 10, nothing else touched:
+#
+#     k        net/yr   clone at 85    hematocrit    blood count    meets PV
+#                          (% niche)       at 85       looks odd     criteria
+#     0.0004   -0.01         0.0           45.0          never        never
+#     0.0008   +0.03         0.1           45.0          never        never
+#     0.0012   +0.07         1.8           45.2          never        never
+#     0.0018   +0.13        50.6           53.2         age 74       age 83
+#     0.0024   +0.19        78.8           63.9         age 54       age 60
+#     0.0035   +0.30        85.7           67.5         age 38       age 41
+#     0.0050   +0.45        90.0           69.8         age 29       age 31
+#
+# THERE ARE THREE OUTCOMES, NOT TWO, AND THE MIDDLE ONE IS THE INTERESTING ONE.
+#   * NO ESCAPE (k below 0.0005). The clone never gets going. Nothing to find.
+#   * ESCAPE WITHOUT DISEASE (k around 0.0008 to 0.0012). The clone is real, growing,
+#     and detectable by a sensitive assay — and the blood count is normal for life.
+#     THIS IS CLONAL HEMATOPOIESIS, and it is most of the people who carry V617F. The
+#     model did not need a second mechanism to produce them. Same mutation, same
+#     physiology, a slightly smaller advantage, and the disease simply runs out of
+#     lifetime. That is the file's main claim.
+#   * DISEASE (k above about 0.0018). The clone crosses into a moving blood count, and
+#     the age at which it does is set by the dial.
+#
+# THE SHIPPED VALUE, k = 0.0024, PUTS THE PV CRITERIA AT AGE 60. The median age at
+# diagnosis of polycythemia vera is about sixty. That was not fitted to it — it is
+# where a plausible growth rate lands, and it is the one number here worth taking
+# seriously as a prediction. AGE OF ONSET IS AN OUTPUT IN THIS FILE, NOT A SETTING.
+#
+# AND THE SENSITIVITY IS THE WARNING. Doubling the dial from 0.0018 to 0.0035 moves
+# first abnormality from age 74 to age 38. A model this steep cannot predict an
+# individual's onset from a loosely-estimated advantage, and saying so is the point:
+# it tells you how well that number would have to be measured to be worth anything.
+#
+# WHAT THIS FILE DOES NOT CLAIM.
+#   * The niche edge is BOOKKEEPING FOR COMPETITION, not a conversion. Mutant cells do
+#     not turn neighbours mutant; they out-renew them for a fixed number of niche
+#     slots, and `normal_hsc -> mutant_hsc` is how a fixed-total displacement is
+#     written with stocks. The logistic shape is the claim; the arrow's direction of
+#     travel is an accounting choice.
+#   * CLONE EXPANSION IS DETERMINISTIC HERE AND IS A STOCHASTIC PROCESS IN A PERSON.
+#     A clone's early life is a handful of cells, where chance dominates and `drift`
+#     is a smooth stand-in for a coin flip. So this file can say WHETHER a given
+#     advantage escapes on average. It cannot give the probability that it does, and
+#     the real answer to "why do most carriers never get PV" may be mostly that
+#     probability. See `holes` on Nordstern's `polycythaemia-vera`.
+#   * The mutant fraction of progenitors is taken to EQUAL the stem-cell clone
+#     fraction. Declared, not derived.
+#   * TIME IS IN YEARS, so EPO and the progenitor pool are run far slower than life.
+#     Real EPO has a half-life of about five hours and these constants equilibrate it
+#     in weeks. On a decade scale that is still instantaneous, so the slow curves are
+#     right and anything inside a month in this file is not.
+#   * No treatment. This is the untreated natural history on purpose — the whole point
+#     is the age the line is crossed. `erythropoiesis-pv.strombild` has the phlebotomy.
+#
+# THE MISSING DATA, STATED. To predict a real person's age of onset you would need
+# their advantage, and nobody measures it. What is measurable is allele burden at two
+# timepoints, which gives the growth rate directly. That measurement, in carriers
+# rather than patients, is the experiment this model is asking for.
+
+node age         : range(0, 90),  init(0)  @ box(fill = squares)                    # years lived
+node normal_hsc  : range(0, 100), init(100) @ bucket(fill = dots)                   # wild-type stem cells, % of niche
+node mutant_hsc  : range(0, 100), init(0)  @ bucket(fill = squares)                 # the V617F clone, % of niche
+node epo         : range(0, 120), init(10) @ bucket(fill = water)                   # plasma erythropoietin, mU/mL
+node progenitors : range(0, 200), init(50) @ bucket(fill = dots)                    # erythroid precursors
+node red_cells   : range(0, 80),  init(45) @ bucket(fill = water, threshold = 48)   # red-cell mass as hematocrit, %
+
+node mutated     : range(0, 1), init(0) @ box     # latches when the mutation happens
+node noticed     : range(0, 1), init(0) @ box     # latches at a hematocrit a blood count would flag
+node diagnosable : range(0, 1), init(0) @ box     # latches at a hematocrit that meets the PV threshold
+node clot_zone   : range(0, 1), init(0) @ box     # latches where viscosity drives thrombotic risk
+
+external lifetime     # the clock
+external kidney
+external clearance
+external marrow
+external apoptosis
+external spleen
+
+lifetime    -> age         : constant(c = 1)                                            # one year per year
+
+# THE CLONE. logistic displacement in a fixed niche, against loss by drift.
+normal_hsc  -> mutant_hsc  : product(of = normal_hsc, by = mutant_hsc, k = 0.0024)      # <<< THE DIAL
+mutant_hsc  -> normal_hsc  : proportional(of = mutant_hsc, k = 0.05)                    # drift
+
+# THE LOOP, unchanged in structure from `erythropoiesis.strombild`.
+kidney      -> epo         : repress(of = red_cells, max = 1700, k = 35, n = 8)         # the sensor is fine
+epo         -> clearance   : proportional(of = epo, k = 20)
+marrow      -> progenitors : constant(c = 1137)
+progenitors -> apoptosis   : proportional(of = progenitors, k = 20)
+
+# TWO MATURATION EDGES, AND THE CLONE SETS THE SECOND ONE'S WEIGHT.
+# wild-type precursors mature only with EPO. V617F precursors signal as though EPO
+# were bound when it is not, so their edge reads the clone and ignores the hormone.
+progenitors -> red_cells   : product(of = progenitors, by = epo, k = 0.274)             # EPO-dependent
+progenitors -> red_cells   : product(of = progenitors, by = mutant_hsc, k = 0.050)      # EPO-independent
+
+red_cells   -> spleen      : proportional(of = red_cells, k = 3.04)                     # 120-day lifespan
+
+event mutation    : age >= 10 & mutated == 0     : mutated = 1, mutant_hsc += 0.01, normal_hsc -= 0.01
+event notice      : red_cells >= 48 & noticed == 0     : noticed = 1
+event meets_criteria : red_cells >= 52 & diagnosable == 0 : diagnosable = 1
+event thrombotic  : red_cells >= 55 & clot_zone == 0   : clot_zone = 1
+
+pathway clone : normal_hsc->mutant_hsc, mutant_hsc->normal_hsc
+pathway blood : kidney->epo, epo->clearance, marrow->progenitors, progenitors->apoptosis, red_cells->spleen

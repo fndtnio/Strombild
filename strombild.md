@@ -138,6 +138,7 @@ Current rate laws:
 | `gated`          | Proportional, but throttled as the destination fills (soft backpressure). | `of`, `k`     |
 | `adjust`         | Negative feedback toward a setpoint: `k * (target - of)`. May be negative.  | `of`, `target`, `k`  |
 | `product`        | Two stocks multiplied: `k * of * by`. The only edge rate that reads a *second* node. | `of`, `by`, `k` |
+| `repress`        | The inhibitory hill: full at 0, half at `k`, falling as `of` rises. | `of`, `max`, `k`, `n` |
 
 ```
 constant(c = 3)
@@ -148,6 +149,13 @@ adjust(of = inventory, target = 20, k = 1.0)
 ```
 
 `hill` computes: `max * of^n / (k^n + of^n)`.
+
+`repress` computes: `max * k^n / (k^n + of^n)` — the same curve upside down. It is the
+shape of a production held down by what it causes: the kidney makes EPO when red
+cells are few and almost none when they are many (`erythropoiesis.strombild`). It
+was forced by that loop; until it, no law decreased with the node it read, and a
+sensor that turns a flow *down* could only be faked with `adjust` running backwards,
+which invents a flow that removes what was never made.
 
 `product` is the first edge rate law to read **two** stocks — its rate is their
 product, `k * of * by` (`of` defaults to the source, `by` is the second factor).
@@ -627,6 +635,221 @@ Two practical notes this model answers:
   `knifeEdge(model, "debt")` finds that line, and flipping `init` across it flips the
   fate, exactly as the café's `init` does.
 
+### Bone — a strain the skeleton defends, and the first *speed limit*
+
+"Weight-bearing exercise is good for your bones" is an arrow with no interior.
+The interior answers a question the arrow cannot — *which* exercise — and it
+forces the language's next gap.
+
+Bone is torn down and rebuilt continuously, and the crew steers by **mechanical
+strain**: below roughly 1500 µε the skeleton reads "over-built" and lets it thin;
+above, formation switches on (Frost's *mechanostat* — a `hill` with a sharp `k`).
+The loop closes on one fact:
+
+> **strain is force ÷ how much bone there is.**
+
+Thin bone strains *more* under the same load, which turns formation back on. So
+what is defended is the **strain**; the mass is only whatever it takes to hold it.
+Drop the load threefold and strain falls by well under threefold — the controller
+spends bone to defend the setpoint. That is the same shape as *blood pressure*,
+with one difference that matters: the defended variable here is not a stock.
+
+```
+node load    : range(0, 3000), init(1500)   # the dial: peak force through the bone
+node strain  : range(0, 5000), init(1500)   # what the bone feels, µε
+node mineral : range(0, 150),  init(100)    # bone mineral, % of the setpoint
+
+ground     -> strain     : proportional(of = load, k = 2.0)
+strain     -> stiffness  : product(of = strain, by = mineral, k = 0.02)   # → strain = load / bone
+osteoblast -> mineral    : hill(of = strain, max = 0.4, k = 1500, n = 4)  # the mechanostat
+marrow     -> mineral    : constant(c = 0.3)                              # basal formation
+mineral    -> osteoclast : proportional(of = mineral, k = 0.005)          # resorption
+```
+
+Three things this model is good for:
+
+**It makes an arrow refutable by structure.** `marrow -> mineral : constant(c = 0.3)`
+is not a fudge factor, it is the claim *"formation does not require load,"* and it
+is what puts a flat floor (`c/k` = 60) under disuse. Delete the line and the model
+predicts zero bone at zero load. Each edge can be attacked that way; a hand-drawn
+arrow cannot.
+
+**It carries a clock, and the clock is the point.** One tick ≈ one week, so
+resorption's `k = 0.005` is a time constant near 200 ticks — about four years to
+re-settle after a change in load. Under 10% of the change has happened at twelve
+weeks. A model with honest rate constants tells you which experiments are
+*possible*, which is a different and cheaper service than telling you what is true.
+
+**It forces `aux`.** Strain is force ÷ bone: an **algebraic** value, computed
+instantly from two others, not a thing that accumulates. Strombild has only stocks,
+so it is written above as a *fast stock* — inflow ∝ `load`, outflow ∝ `strain × mineral`,
+which settles at `load / mineral` in about half a tick. It computes the right number
+(a test pins it), but it is arithmetic wearing a bucket, and it needs a made-up
+relaxation rate that means nothing. The language wants a node that is **computed,
+never integrated** — what system dynamics calls an *auxiliary*. This is the first
+model to force one.
+
+### Erythropoiesis — the loop, and the disease that is one edge away
+
+`erythropoiesis.strombild`. The kidney reads the hematocrit and makes EPO (`repress`);
+EPO lets marrow progenitors survive and mature (`product(of = progenitors, by = epo)`),
+the rest die (`apoptosis`); red cells live 120 days. Settles at hematocrit 45, EPO 10.
+Bleed it to 30 and it is back in three weeks with EPO doubled on the way.
+
+`erythropoiesis-pv.strombild` is the same file with the maturation edge's dependency
+on EPO deleted — `proportional(of = progenitors)` — which is what JAK2 V617F does at
+the receptor. Hematocrit climbs into the sixties and the kidney, working perfectly,
+turns EPO down below 1: high red cells with LOW EPO, the disease's signature, is the
+loop's fingerprint. A `phlebotomy` event treats the stock and shows the sawtooth.
+The *other* polycythemia (PFCP, the receptor with no off switch) is a tripled `k` on
+the healthy product — same words, high red cells and low EPO — and the test that
+tells them apart is in the suite: set the kidney's max to 0 and PFCP's red cells fall
+while PV's do not. Mechanism is what survives the experiment the outcome cannot
+distinguish. (Schaltwerk draws the molecular end of both: `jak2-v617f` and `pfcp`.)
+
+### Clonal escape — the same two files, run over a lifetime
+
+`clonal-escape.strombild`. The PV file above models an **end state**: a marrow that
+already ignores EPO. This one models the forty years before it, and the question it
+answers is why a mutation acquired in childhood becomes a disease at sixty.
+
+The move is to stop treating the rewired edge as a fact of the file and make its
+**weight a stock**. A stem-cell niche of 100 slots holds `normal_hsc` and
+`mutant_hsc`; the mutant out-renews its neighbours (`product(of = normal_hsc,
+by = mutant_hsc)`, logistic displacement) against a `drift` term that returns share
+to wild-type. The two maturation edges then run side by side: the EPO-dependent one
+reads `epo`, and the V617F one reads `mutant_hsc`. **The clone's share is how much of
+the marrow has stopped listening.**
+
+One number, the `k` on the niche edge, is the whole dial, and a small clone's net
+growth is `100k − drift`. It produces **three** outcomes, not two:
+
+| `k` | clone at 85 | hematocrit | what that is |
+|---|---|---|---|
+| 0.0004 | 0.0% | 45 | no escape — nothing to find |
+| 0.0012 | 1.8% | 45 | **escape without disease — clonal hematopoiesis** |
+| 0.0024 | 78.8% | 64 | PV, criteria met at age 60 |
+| 0.0050 | 90.0% | 70 | PV, criteria met at age 31 |
+
+The middle row is the point. *Most people who carry V617F never get PV*, and the file
+produces them without a second mechanism — same mutation, same physiology, a slightly
+smaller advantage, and the disease runs out of lifetime. The shipped `k` puts the
+diagnostic threshold at **age 60**, which is the real median age at diagnosis and was
+not fitted to it.
+
+It is also a lesson in reading a model's sensitivity rather than its output: doubling
+the dial moves first abnormality from age 74 to age 38. The file therefore cannot
+predict an individual's onset, and it says so in its own header — what it can do is
+state how precisely that growth rate would have to be measured to be worth anything.
+Time is in **years**, which means EPO and the progenitor pool run far slower here than
+in life; on a decade scale that is still instantaneous, and nothing inside a month in
+this file is true.
+
+### Iron — the material, and the lesson about which constraint binds
+
+`iron.strombild`. The two files above say when the marrow is *told* to build. This one
+says what it builds *with*, and it is the file where a unit choice does most of the
+work: **iron is measured in hematocrit points it could build**, not milligrams. One
+hematocrit point of red cells carries about 53 mg of iron, so iron consumed equals red
+cells produced, and **phlebotomy needs no iron rule at all** — the iron is inside the
+cells you remove. The event says `red_cells -= 4` and says nothing about iron.
+
+Two pools and a gate: `plasma_iron` (tiny, fast, the only iron the marrow can use),
+`stores` (large, where dead red cells put theirs), and `hepcidin`, which blocks both
+release from stores and absorption from the gut by having `ferroportin` destroyed.
+Hepcidin is **made** in proportion to how loaded the stores are and **removed** in
+proportion to marrow demand, so iron deficiency opens its own gate.
+
+Shipped as PV with phlebotomy, every figure an output:
+
+| | |
+|---|---|
+| phlebotomy interval, first → settled | 73 → 130 days |
+| iron stores, start → settled | 19.1 → 11.1 |
+| hepcidin, start → settled | 1.0 → 0.47 |
+
+**The interval lengthens because the iron is gone.** Nordstern's record for this
+disease reads "venesection every few weeks at first and every few months once
+stable"; that lengthening is produced here by iron alone.
+
+Three levers, one edit each, and the third one is why the file is worth reading:
+
+- **the stock** — phlebotomy. Works, and never stops.
+- **the substrate** — a hepcidin mimetic (rusfertide, approved 2026-08-28). Raise the
+  hepcidin edge's `max` to 4.3. Phlebotomies stop, hematocrit holds at 43.5–44.7, and
+  **the stores stay full at 19.2 instead of falling to 11.** Same hematocrit, opposite
+  iron, which is the drug's clinical case. The window is narrow and overshooting it is
+  anaemia, which is the real dose-limiting toxicity.
+- **the edge** — a JAK2 inhibitor. Lower the maturation `k`. **It does nothing, at any
+  dose.** At a sixth of normal, hematocrit, stores and interval are unchanged; the only
+  thing that moves is `plasma_iron`, which backs up in front of a slower marrow.
+
+That null result is the point. **A model with one binding constraint can only report
+"inert" or "decisive", never "therapeutic."** Iron is the only brake here, so the
+marrow lever is inert and the iron lever is nearly decisive — which is also why the
+drug's window came out so sharp. `erythropoiesis-pv.strombild` has the mirror fault:
+the marrow edge is the only brake and iron does not exist. **Neither file can say
+which constraint binds in a patient, which is the question a clinician has.** Merging
+them is the next rung.
+
+A conservation test guards the file, and it exists because of a real bug: the release
+edge first read `hepcidin` alone and not `stores`, so an empty store kept releasing
+iron for ever. The model manufactured the material it was supposed to be running out
+of, and produced a tidy steady rhythm that was pure artefact.
+
+### VO₂max — two arms on two clocks, and why a `product` is an argument
+
+Bone answered *which* exercise for one tissue. This one answers *HIIT or long slow
+distance*, and the answer is a multiplication sign.
+
+Fick's equation says VO₂max is a **product**: cardiac output × (a-v)O₂ difference —
+**delivery** (central: blood volume → stroke volume) times **extraction**
+(peripheral: mitochondria and capillaries). Max out either arm alone and the other
+one is your ceiling.
+
+```
+cardiac_stress -> plasma : hill(of = intensity, max = 0.26, k = 70, n = 6)  # a THRESHOLD
+baseline       -> plasma : constant(c = 1.0)
+plasma         -> renal  : proportional(of = plasma, k = 0.25)              # τ = 4 weeks
+
+aerobic_load -> mito      : proportional(of = volume, k = 0.0072)           # a DOSE
+baseline     -> mito      : constant(c = 0.25)
+mito         -> mitophagy : proportional(of = mito, k = 0.0625)             # τ = 16 weeks
+
+fick   -> vo2max   : product(of = plasma, by = mito, k = 8.0)               # delivery × extraction
+vo2max -> measured : proportional(of = vo2max, k = 4.0)
+```
+
+**The `product` carries the whole argument.** Sedentary (intensity 40, volume 1)
+settles at 33. Volume alone (40, 12) buys +10; intensity alone (95, 1) buys +7;
+both together (95, 12) buys **+20** — more than the sum of the parts. A model that
+*added* the two arms could not produce that. Polarized training, derived from the
+`×` rather than from a study.
+
+**The two rate laws are the claim.** `hill` on one arm and `proportional` on the
+other say *intensity is a threshold, volume is a dose* — the arms respond to
+different quantities in different shapes, so any study that varies only one of them
+is structurally unable to see the interaction. Both halves are pinned by tests.
+
+**The two time constants are the actionable part.** Delivery is fast on and fast
+off (τ ≈ 4 weeks); extraction is slow both ways (τ ≈ 16). So two weeks off costs
+~7%, nearly all of it the fast arm, and it returns in a month — while twelve weeks
+off costs ~22% and takes four months. One word, "detraining", two different
+injuries, and no single half-life can tell them apart.
+
+**And it is the first model in the set you can run on yourself.** Eight weeks moves
+VO₂max ~22% here against a ~3% lab-test CV — signal beats noise sevenfold, so an
+N-of-1 is possible. Bone is the opposite: a 12-week BMD signal sits *inside* DEXA's
+precision error, so an individual can never resolve it. That is an *answerability*
+calculation, done from the mechanism before any data is collected, and it is a
+different and much cheaper service than telling you what is true. A test asserts
+both sides of the contrast.
+
+`vo2max` is not a stock — it is Fick's product, computed instantly — so it is
+written as a fast stock exactly like bone's `strain`. **Two independent models have
+now forced the same missing thing**, which is what promotes `aux` from an idea to
+the next feature.
+
 ---
 
 ## How it runs (engine sketch)
@@ -652,9 +875,33 @@ integration rather than one-pass evaluation.
 
 ## Not yet in the language (deferred until an example forces it)
 
+- **`aux` — an algebraic node**, computed from others every step and never
+  integrated. **Now the leading gap, and the only one forced twice**: *bone*, where
+  strain is force ÷ bone, and *vo2max*, where the readout is Fick's product of two
+  capacities. Neither value accumulates or has a timescale of its own; both are
+  faked today as fast stocks, which works but invents a relaxation rate that means
+  nothing and puts a bucket on the canvas that is not a stock. The first genuinely
+  new *kind of node* the language has needed — and the design question it raises is
+  whether `aux` gets its own rate-law vocabulary or reuses the existing one.
 - **Time-varying inputs** on externals — the "dataset / busy-morning vs
-  quiet-afternoon" scenario, which points at a model-vs-scenario split. Now the
-  leading gap: every external is presently a constant boundary.
+  quiet-afternoon" scenario, which points at a model-vs-scenario split. Every
+  external is presently a constant boundary. *bone* makes this acute: the real
+  question is "what happens if I start lifting at 45", which is a step change
+  partway through a run, not a different `init`. *vo2max* makes it worse still:
+  its whole detraining story — two weeks off vs twelve — is a step change and
+  cannot be told without one.
+- **A shared budget across models.** Nothing stops *vo2max* from dialling intensity
+  100 *and* volume 15, and nothing stops bone and vo2max from each claiming all of
+  your week. Real training is bounded by recovery and by hours, and that bound is a
+  conservation law rather than a preference. It is what would let a *set* of models
+  answer "what should I do" instead of each answering "is more of me good" — and it
+  is the first thing that would need models to compose rather than sit side by side.
+- **Different clocks on the two arms of a turnover loop.** *bone* uses one
+  resorption constant for both directions, but real bone is lost fast and regained
+  slowly, and formation lags resorption by the months a remodeling unit takes to
+  complete. Splitting the crew into a resorbing and a forming stage would give the
+  lag — and the delay would be *a stock*, not a new operator, which is worth knowing
+  before anyone adds a `delay`.
 - **Orbit / fate detection** — classifying whether a trajectory rests, loops, or
   is latched. First piece landed: `fateScan` reads the latched on/off *combination*
   of a set of stocks as one input is swept (the French flag), with `{from:"lo"|"hi"}`

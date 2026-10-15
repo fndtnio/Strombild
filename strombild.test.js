@@ -372,6 +372,171 @@ test("bullwhip: ignoring the supply line makes the order loop ring; accounting f
   assert.ok(savvy.postMin > 19.5, `savvy settles cleanly, post-peak min ${savvy.postMin.toFixed(1)}`);
 });
 
+/* ---------------- bone: the mechanostat ---------------- */
+
+const BONE = () => fs.readFileSync(path.join(DIR, "bone.strombild"), "utf8");
+// settle the on-disk bone model at a given habitual load
+function bone(load, { t = 6000, src = BONE() } = {}) {
+  const { model } = ok(src);
+  const eng = new S.Engine(model);
+  eng.state.set("load", load);
+  eng.advance(t);
+  return { strain: eng.state.get("strain"), mineral: eng.state.get("mineral") };
+}
+
+test("mechanostat: bone settles where strain sits at the setpoint", () => {
+  const { strain, mineral } = bone(1500);
+  assert.ok(near(strain, 1500, 1), `strain holds its setpoint, got ${strain.toFixed(0)}`);
+  assert.ok(near(mineral, 100, 0.5), `mineral is 100 by definition there, got ${mineral.toFixed(1)}`);
+});
+
+test("the controller defends STRAIN and spends MASS to do it", () => {
+  // the whole claim of the model: cut the load threefold and strain does *not*
+  // fall threefold — bone is given up until the thinner bone strains more again.
+  const habitual = bone(1500), desk = bone(500);
+  assert.ok(desk.mineral < 70, `mass is spent: ${desk.mineral.toFixed(1)}`);
+  const loadRatio = 1500 / 500, strainRatio = habitual.strain / desk.strain;
+  assert.ok(strainRatio < loadRatio / 1.5,
+    `strain is partly defended: fell ${strainRatio.toFixed(2)}x against a ${loadRatio}x load cut`);
+});
+
+test("strain really is force / bone — the fast stock computes the division", () => {
+  for (const load of [500, 1500, 2500]) {
+    const { strain, mineral } = bone(load);
+    assert.ok(near(strain, 100 * load / mineral, 1),
+      `load ${load}: strain ${strain.toFixed(0)} vs load/bone ${(100 * load / mineral).toFixed(0)}`);
+  }
+});
+
+test("more load buys more bone, monotonically, with a ceiling", () => {
+  const m = [200, 800, 1500, 2500, 3000].map(l => bone(l).mineral);
+  for (let i = 1; i < m.length; i++) assert.ok(m[i] > m[i - 1], `monotone at ${i}: ${m}`);
+  assert.ok(m[m.length - 1] < 140, "the hill saturates: bone does not run away");
+});
+
+test("the disuse floor IS the basal formation arm, not a clamp", () => {
+  // c/k = 0.3/0.005 = 60, and below the mechanostat's threshold it is flat:
+  // the floor does not care how little load there is, which is the claim.
+  assert.ok(near(bone(200).mineral, 60, 1), `floor at ~60, got ${bone(200).mineral.toFixed(1)}`);
+  assert.ok(near(bone(0).mineral, 60, 1), "the same floor with no load at all");
+  // Delete that one line and there is no floor: formation is then load-only, so
+  // bone tracks the load all the way down and hits zero at zero. (The strain
+  // feedback still slows the fall — a wheelchair-ish 200 lands near 18, not 0 —
+  // but predicting the loss of four-fifths of a skeleton is still false.)
+  const noBasal = BONE().split("\n").filter(l => !/^\s*marrow\s*->/.test(l)).join("\n");
+  const t = 20000;
+  assert.ok(bone(0, { src: noBasal, t }).mineral < 0.5, "no load, no bone at all");
+  assert.ok(bone(200, { src: noBasal, t }).mineral < 25,
+    "and a near-disuse load costs most of the skeleton, which is why the line is there");
+});
+
+test("the speed limit: a twelve-week study cannot see this", () => {
+  const { model } = ok(BONE());
+  const eng = new S.Engine(model);
+  eng.advance(6000);                                   // settle at the habitual load
+  const before = eng.state.get("mineral");
+  eng.state.set("load", 2500);                         // start jumping
+  const at = wk => { eng.advance(6000 + wk - eng.t); return eng.state.get("mineral"); };
+  const twelve = at(12), final = bone(2500).mineral;
+  const fraction = (twelve - before) / (final - before);
+  assert.ok(final - before > 20, "the change is worth having, eventually");
+  assert.ok(fraction < 0.1,
+    `<10% of it has happened at 12 weeks, got ${(100 * fraction).toFixed(1)}%`);
+});
+
+/* ---------------- vo2max: two arms on two clocks ---------------- */
+
+const VO2 = () => fs.readFileSync(path.join(DIR, "vo2max.strombild"), "utf8");
+// settle the on-disk vo2max model at a given (intensity, volume) prescription
+function vo2(intensity, volume, { t = 3000, eng = null } = {}) {
+  const e = eng || new S.Engine(ok(VO2()).model);
+  e.state.set("intensity", intensity);
+  e.state.set("volume", volume);
+  e.advance(t);
+  return { plasma: e.state.get("plasma"), mito: e.state.get("mito"), vo2max: e.state.get("vo2max"), eng: e };
+}
+
+test("Fick is a product: the combination beats the sum of its parts", () => {
+  // the structural argument for polarized training — it falls out of the ×,
+  // and a model that ADDED the two arms could not produce it.
+  const base = vo2(40, 1).vo2max;
+  const volumeOnly = vo2(40, 12).vo2max - base;
+  const intensityOnly = vo2(95, 1).vo2max - base;
+  const both = vo2(95, 12).vo2max - base;
+  assert.ok(volumeOnly > 5 && intensityOnly > 5, `each arm alone helps: ${volumeOnly}, ${intensityOnly}`);
+  assert.ok(both > volumeOnly + intensityOnly,
+    `together (${both.toFixed(1)}) exceeds the sum (${(volumeOnly + intensityOnly).toFixed(1)})`);
+});
+
+test("intensity is a THRESHOLD, volume is a DOSE", () => {
+  // the model's actual claim: the two arms respond to different quantities and
+  // in different shapes, so a study varying one cannot see the other.
+  const atI = i => vo2(i, 6).vo2max, atV = v => vo2(85, v).vo2max;
+  // below the threshold intensity buys almost nothing; across it, a lot
+  const low = atI(50) - atI(40), across = atI(80) - atI(70);
+  assert.ok(across > 2 * low, `threshold: ${low.toFixed(2)} below vs ${across.toFixed(2)} across`);
+  // volume has no threshold — equal steps buy equal amounts, all the way up
+  const steps = [2, 4, 6, 8, 10, 12].map(v => atV(v) - atV(v - 2));
+  const spread = Math.max(...steps) - Math.min(...steps);
+  assert.ok(spread < 0.05, `dose: every 2-hour step is worth the same, spread ${spread.toFixed(3)}`);
+});
+
+test("detraining: a vacation and a season are different injuries", () => {
+  const { eng, ...trained } = vo2(85, 6);
+  const lost = (now, then) => (then - now) / (then - 4);      // fraction of the trained gain given back
+  eng.state.set("intensity", 0); eng.state.set("volume", 0);
+  const t0 = eng.t;
+  eng.advance(t0 + 2 - eng.t);
+  const twoWk = { v: eng.state.get("vo2max"), p: eng.state.get("plasma"), m: eng.state.get("mito") };
+  eng.advance(t0 + 12 - eng.t);
+  const twelveWk = { v: eng.state.get("vo2max"), p: eng.state.get("plasma"), m: eng.state.get("mito") };
+
+  // two weeks: a real dent, and it is nearly all the fast arm
+  const drop2 = 100 * (trained.vo2max - twoWk.v) / trained.vo2max;
+  assert.ok(drop2 > 4 && drop2 < 11, `two weeks off costs a noticeable ${drop2.toFixed(1)}%`);
+  assert.ok(lost(twoWk.p, trained.plasma) > 3 * lost(twoWk.m, trained.mito),
+    "and the delivery arm gives back its gain several times faster than extraction");
+  // twelve weeks: worse, and now the slow arm has gone too — a different problem
+  const drop12 = 100 * (trained.vo2max - twelveWk.v) / trained.vo2max;
+  assert.ok(drop12 > 2 * drop2, `twelve weeks is a different injury: ${drop12.toFixed(1)}%`);
+  assert.ok(lost(twelveWk.m, trained.mito) > 0.4, "the extraction base is half gone by twelve weeks");
+});
+
+test("the slow arm rebuilds slowly — recovery is not symmetric with the loss", () => {
+  const { eng } = vo2(85, 6);
+  eng.state.set("intensity", 0); eng.state.set("volume", 0);
+  eng.advance(12);                                        // a season off
+  const detrained = eng.state.get("vo2max");
+  eng.state.set("intensity", 85); eng.state.set("volume", 6);
+  const t0 = eng.t, target = vo2(85, 6).vo2max;
+  const back = wk => { eng.advance(t0 + wk - eng.t); return (eng.state.get("vo2max") - detrained) / (target - detrained); };
+  const atFour = back(4), atSixteen = back(16);
+  assert.ok(atFour < 0.55, `a month back recovers under half of it: ${(100 * atFour).toFixed(0)}%`);
+  assert.ok(atSixteen > 0.85, `four months recovers most of it: ${(100 * atSixteen).toFixed(0)}%`);
+});
+
+test("this is the model you can test on yourself — unlike bone", () => {
+  // an answerability calculation, run before any data is collected.
+  const TEST_CV = 3.0;                                    // a good lab VO2max test, %
+  const { eng } = vo2(40, 1);                             // start sedentary
+  const base = eng.state.get("vo2max");
+  eng.state.set("intensity", 85); eng.state.set("volume", 6);
+  eng.advance(8);
+  const gain = 100 * (eng.state.get("vo2max") - base) / base;
+  assert.ok(gain > 3 * TEST_CV,
+    `eight weeks moves ${gain.toFixed(1)}% against a ${TEST_CV}% CV — resolvable in one person`);
+  // the contrast that makes the point: bone's 12-week signal sits inside DEXA's noise
+  const DEXA_CV = 1.5;
+  const b = ok(BONE()).model, be = new S.Engine(b);
+  be.advance(6000);
+  const b0 = be.state.get("mineral");
+  be.state.set("load", 2500);
+  be.advance(6012 - be.t);
+  const boneGain = 100 * (be.state.get("mineral") - b0) / b0;
+  assert.ok(boneGain < 2 * DEXA_CV,
+    `bone's twelve-week signal (${boneGain.toFixed(1)}%) is inside DEXA's noise — never resolvable in one person`);
+});
+
 /* ---------------- pathways ---------------- */
 
 test("pathway selection restricts which edges are live", () => {
@@ -974,17 +1139,260 @@ test("crowded rank keeps buckets from overlapping their neighbour's label", () =
 
 /* ---------------- the on-disk example files all parse ---------------- */
 
-for (const file of ["tub1.strombild", "tub2.strombild", "cafe.strombild", "gene-express.strombild",
-                     "factory1.strombild", "factory2.strombild", "factory3.strombild",
-                     "cell-cycle.strombild", "cell-cycle-divide.strombild",
-                     "french-flag.strombild", "french-flag-bistable.strombild",
-                     "cytokine.strombild", "cytokine-arms-race.strombild", "cytokine-inflammation.strombild",
-                     "strait.strombild", "beer-game.strombild", "golgi.strombild",
-                     "mitochondria.strombild", "mito-fuel.strombild", "mito-demand.strombild"]) {
+// read the directory rather than listing files: a hand-kept list silently stops
+// covering every example you add, which is the one thing this test is for.
+const EXAMPLES = fs.readdirSync(DIR).filter(f => f.endsWith(".strombild")).sort();
+
+test("there are examples on disk to check", () => {
+  assert.ok(EXAMPLES.length > 20, `found only ${EXAMPLES.length} example files`);
+});
+
+for (const file of EXAMPLES) {
   test(`example file parses without errors: ${file}`, () => {
-    const p = path.join(DIR, file);
-    if (!fs.existsSync(p)) return;                       // tolerate missing
-    const r = S.parseModel(fs.readFileSync(p, "utf8"));
+    const r = S.parseModel(fs.readFileSync(path.join(DIR, file), "utf8"));
     assert.deepEqual(r.errors, [], `${file} had errors:\n` + JSON.stringify(r.errors, null, 2));
   });
 }
+
+/* ---------------- repress, and the red-cell loop ---------------- */
+
+test("repress: the inhibitory hill — full at 0, half at k, falling with what it reads", () => {
+  const src = v => `
+    node x : range(0, 100), init(${v})
+    node y : range(0, 1000), init(0)
+    external src
+    src -> y : repress(of = x, max = 10, k = 20, n = 4)
+    pathway p : src->y`;
+  const rate = v => { const { model } = ok(src(v)); const eng = new S.Engine(model); eng.advance(1); return eng.state.get("y"); };
+  assert.ok(near(rate(0), 10, 0.01), `full at 0, got ${rate(0)}`);
+  assert.ok(near(rate(20), 5, 0.01), `half at k, got ${rate(20)}`);
+  assert.ok(rate(40) < 0.7 && rate(40) > 0.5, `(1/17 of max) at 2k, got ${rate(40)}`);
+  assert.ok(rate(5) > rate(10) && rate(10) > rate(20), "monotone decreasing");
+  const { errors } = S.parseModel("node x : range(0,1)\nexternal s\ns -> x : repress(of = x, max = 1)");
+  assert.ok(errors.length, "missing k and n is an error");
+});
+
+const ERY = fs.readFileSync(path.join(DIR, "erythropoiesis.strombild"), "utf8");
+const PV = fs.readFileSync(path.join(DIR, "erythropoiesis-pv.strombild"), "utf8");
+const eryWith = (edge, kidneyMax = 300) => ERY
+  .replace("progenitors -> red_cells   : product(of = progenitors, by = epo, k = 0.00075)", edge)
+  .replace("repress(of = red_cells, max = 300, k = 35, n = 8)", `repress(of = red_cells, max = ${kidneyMax}, k = 35, n = 8)`);
+
+test("erythropoiesis settles where the textbook says: hematocrit 45, EPO 10", () => {
+  assert.ok(near(settle(ERY, "red_cells", { t: 2000 }), 45, 1));
+  assert.ok(near(settle(ERY, "epo", { t: 2000 }), 10, 1));
+});
+
+test("a bleed is defended: from 30 the hematocrit is back near 45 in weeks, and EPO rose to do it, then fell back", () => {
+  const { model } = ok(ERY);
+  const eng = new S.Engine(model);
+  eng.state.set("red_cells", 30);
+  eng.advance(1);  const epoDay1 = eng.state.get("epo");
+  eng.advance(27); const hct4w = eng.state.get("red_cells");
+  eng.advance(60); const epoLater = eng.state.get("epo");
+  assert.ok(epoDay1 > 18, `EPO rose fast, got ${epoDay1.toFixed(1)}`);
+  assert.ok(hct4w > 43, `hematocrit recovered, got ${hct4w.toFixed(1)}`);
+  assert.ok(near(epoLater, 10, 1), `EPO back to baseline, got ${epoLater.toFixed(1)}`);
+});
+
+test("polycythemia vera is one edge: hematocrit climbs into the sixties and EPO falls below 1 — the loop intact and ignored", () => {
+  const src = PV.replace("event phlebotomy : red_cells >= 55 : red_cells -= 5", "");
+  assert.ok(settle(src, "red_cells", { t: 2000 }) > 60);
+  assert.ok(settle(src, "epo", { t: 2000 }) < 1);
+});
+
+test("phlebotomy treats the stock: a sawtooth that never ends", () => {
+  const { model } = ok(PV);
+  const eng = new S.Engine(model);
+  let fired = 0, prev = eng.state.get("red_cells"), maxHct = 0;
+  for (let i = 0; i < 4000; i++) { eng.advance(0.25); const h = eng.state.get("red_cells"); if (h < prev - 3) fired++; prev = h; maxHct = Math.max(maxHct, h); }
+  assert.ok(fired >= 3, `repeated phlebotomies, got ${fired}`);
+  assert.ok(maxHct < 56, `held under the trigger, peak ${maxHct.toFixed(1)}`);
+  assert.ok(settle(PV, "epo", { t: 2000 }) < 6, "and EPO stays low throughout — the kidney still sees too many red cells");
+});
+
+test("mechanism survives the experiment the outcome cannot distinguish: kidney off, PFCP's red cells fall, PV's do not", () => {
+  const pfcp = eryWith("progenitors -> red_cells   : product(of = progenitors, by = epo, k = 0.00225)");
+  const pfcpHct = settle(pfcp, "red_cells", { t: 2000 }), pfcpEpo = settle(pfcp, "epo", { t: 2000 });
+  assert.ok(pfcpHct > 50 && pfcpHct < 55, `PFCP high red cells, got ${pfcpHct.toFixed(1)}`);
+  assert.ok(pfcpEpo < 5, `PFCP low EPO, got ${pfcpEpo.toFixed(1)}`);        // same words as PV
+  const pfcpOff = eryWith("progenitors -> red_cells   : product(of = progenitors, by = epo, k = 0.00225)", 0);
+  const pvOff = eryWith("progenitors -> red_cells   : proportional(of = progenitors, k = 0.011)", 0);
+  assert.ok(settle(pfcpOff, "red_cells", { t: 2000 }) < 5, "PFCP still needs EPO");
+  assert.ok(settle(pvOff, "red_cells", { t: 2000 }) > 60, "PV does not");
+  assert.ok(settle(eryWith("progenitors -> red_cells   : product(of = progenitors, by = epo, k = 0.00075)", 0), "red_cells", { t: 2000 }) < 5, "and neither does the healthy marrow without its kidney");
+});
+
+/* ---------------- clonal escape: the same mutation, three outcomes ---------------- */
+
+const ESCAPE = fs.readFileSync(path.join(DIR, "clonal-escape.strombild"), "utf8");
+const DIAL = "normal_hsc  -> mutant_hsc  : product(of = normal_hsc, by = mutant_hsc, k = 0.0024)";
+
+// run a lifetime and report the age each clinical latch lit, plus the end state.
+const lifetime = (advantage, years = 85) => {
+  const src = advantage === null ? ESCAPE
+    : ESCAPE.replace(DIAL, DIAL.replace("k = 0.0024", `k = ${advantage}`));
+  const { model } = ok(src);
+  const eng = new S.Engine(model);
+  const at = {};
+  let nicheMin = Infinity, nicheMax = -Infinity;
+  for (let y = 1; y <= years; y++) {
+    eng.advance(1);
+    for (const f of ["mutated", "noticed", "diagnosable", "clot_zone"])
+      if (at[f] === undefined && eng.state.get(f) >= 0.5) at[f] = y;
+    const niche = eng.state.get("normal_hsc") + eng.state.get("mutant_hsc");
+    nicheMin = Math.min(nicheMin, niche); nicheMax = Math.max(nicheMax, niche);
+  }
+  return {
+    at,
+    clone: eng.state.get("mutant_hsc"),
+    hct: eng.state.get("red_cells"),
+    epo: eng.state.get("epo"),
+    nicheMin, nicheMax,
+  };
+};
+
+test("clonal escape: the mutation is early and silent — nothing moves for decades after it lands", () => {
+  const r = lifetime(null);
+  assert.equal(r.at.mutated, 11, `the mutation fires in the eleventh year, got ${r.at.mutated}`);
+  // thirty years later the blood count is still unremarkable: the gap the file exists for
+  const { model } = ok(ESCAPE);
+  const eng = new S.Engine(model);
+  eng.advance(40);
+  assert.ok(eng.state.get("mutant_hsc") > 0.5, "the clone is growing by forty");
+  assert.ok(near(eng.state.get("red_cells"), 45, 1), `and the hematocrit has not moved, got ${eng.state.get("red_cells").toFixed(1)}`);
+});
+
+test("clonal escape: the shipped dial puts the PV criteria at about sixty — age of onset is an output", () => {
+  const r = lifetime(null);
+  assert.ok(r.at.noticed >= 50 && r.at.noticed <= 58, `first abnormal count in the fifties, got ${r.at.noticed}`);
+  assert.ok(r.at.diagnosable >= 57 && r.at.diagnosable <= 64, `meets criteria near sixty, got ${r.at.diagnosable}`);
+  assert.ok(r.at.clot_zone > r.at.diagnosable, "and the thrombotic range comes after it");
+  assert.ok(r.hct > 60, `ends in the sixties, got ${r.hct.toFixed(1)}`);
+  assert.ok(r.epo < 1, `with EPO suppressed — the PV fingerprint, got ${r.epo.toFixed(2)}`);
+});
+
+test("clonal escape: THREE outcomes from one dial — no escape, escape without disease, disease", () => {
+  const none = lifetime(0.0004);          // 100k < drift
+  assert.ok(none.clone < 0.02, `no escape: the clone dies back, got ${none.clone.toFixed(3)}`);
+  assert.equal(none.at.noticed, undefined, "and no blood count ever looks odd");
+
+  const carrier = lifetime(0.0012);       // 100k > drift, and too slow to matter
+  assert.ok(carrier.clone > 0.5 && carrier.clone < 10,
+    `clonal hematopoiesis: a real, detectable clone, got ${carrier.clone.toFixed(2)}%`);
+  assert.ok(near(carrier.hct, 45, 1), `with a normal hematocrit for life, got ${carrier.hct.toFixed(1)}`);
+  assert.equal(carrier.at.noticed, undefined, "never crosses into disease");
+
+  const patient = lifetime(0.005);
+  assert.ok(patient.at.diagnosable < 40, `a steeper dial is a young patient, got ${patient.at.diagnosable}`);
+
+  // monotone: a bigger advantage is never a later disease
+  const ages = [0.0024, 0.0035, 0.005, 0.008].map(k => lifetime(k).at.diagnosable);
+  for (let i = 1; i < ages.length; i++)
+    assert.ok(ages[i] <= ages[i - 1], `onset moves earlier as the dial rises, got ${ages.join(" > ")}`);
+});
+
+/* ---------------- iron: the material, and which constraint binds ---------------- */
+
+const IRON = fs.readFileSync(path.join(DIR, "iron.strombild"), "utf8");
+const PHLEB = "event phlebotomy : red_cells >= 47 : red_cells -= 4";
+const HEPMAX = "hill(of = stores, max = 4.0, k = 19.2, n = 2)";
+const MATURE = "by = erythroblasts, k = 0.1247)";
+const ironRun = (src, days = 2500) => {
+  const { model } = ok(src);
+  const eng = new S.Engine(model);
+  const gaps = [];
+  let last = 0, prev = eng.state.get("red_cells"), lo = Infinity, hi = -Infinity;
+  for (let d = 1; d <= days; d++) {
+    eng.advance(1);
+    const h = eng.state.get("red_cells");
+    if (d > 300) { lo = Math.min(lo, h); hi = Math.max(hi, h); }
+    if (h < prev - 2) { gaps.push(d - last); last = d; }
+    prev = h;
+  }
+  const g = n => eng.state.get(n);
+  return { gaps, lo, hi, hct: g("red_cells"), stores: g("stores"),
+           plasma: g("plasma_iron"), hep: g("hepcidin") };
+};
+
+test("iron: the loop is CLOSED — with the gut and the leak removed, total iron is conserved", () => {
+  // THE BUG THIS TEST EXISTS FOR. The release edge first read hepcidin alone and not
+  // `stores`, so an empty store went on releasing iron for ever — the model
+  // MANUFACTURED the material it was supposed to be running out of, and produced a
+  // tidy steady phlebotomy rhythm that was pure artefact.
+  const closed = IRON
+    .replace("diet          -> plasma_iron   : repress(of = hepcidin, max = 0.05, k = 1, n = 3)", "")
+    .replace("stores        -> losses        : proportional(of = stores, k = 0.0013)", "")
+    .replace(PHLEB, "");
+  const { model } = ok(closed);
+  const eng = new S.Engine(model);
+  const total = () => eng.state.get("plasma_iron") + eng.state.get("stores") + eng.state.get("red_cells");
+  const start = total();
+  for (let d = 0; d < 1200; d++) {
+    eng.advance(1);
+    assert.ok(Math.abs(total() - start) < 0.05,
+      `iron created or destroyed by day ${d}: ${start.toFixed(3)} -> ${total().toFixed(3)}`);
+  }
+});
+
+test("iron: the healthy marrow sits where the textbook says, with full stores and an open-but-not-wide gate", () => {
+  const healthy = IRON
+    .replace("marrow        -> erythroblasts : constant(c = 61.0)",
+             "marrow        -> erythroblasts : proportional(of = epo, k = 5.0)")
+    .replace(PHLEB, "");
+  const r = ironRun(healthy);
+  assert.ok(near(r.hct, 45, 1), `hematocrit 45, got ${r.hct.toFixed(1)}`);
+  assert.ok(near(r.stores, 19, 1), `stores replete, got ${r.stores.toFixed(1)}`);
+  assert.ok(near(r.hep, 1, 0.1), `hepcidin at baseline, got ${r.hep.toFixed(2)}`);
+  assert.equal(r.gaps.length, 0, "and nothing to treat");
+});
+
+test("iron: phlebotomy's interval LENGTHENS as the stores empty — the register's prose, as an output", () => {
+  const r = ironRun(IRON);
+  assert.ok(r.gaps.length > 8, `a repeating sawtooth, got ${r.gaps.length} phlebotomies`);
+  const first = r.gaps[0], settled = r.gaps[r.gaps.length - 1];
+  assert.ok(first < 90, `early phlebotomies are weeks apart, got ${first} days`);
+  assert.ok(settled > 115, `settled ones are months apart, got ${settled} days`);
+  assert.ok(settled > first * 1.5,
+    `and the interval at least half as long again, ${first} -> ${settled}`);
+  assert.ok(r.stores < 14, `because the iron went out with the blood, stores ${r.stores.toFixed(1)}`);
+  assert.ok(r.hep < 0.6, `and the body opened its gate in response, hepcidin ${r.hep.toFixed(2)}`);
+});
+
+test("iron: the hepcidin mimetic holds the hematocrit WITHOUT stripping the iron — the drug's whole case", () => {
+  const drug = IRON.replace(HEPMAX, "hill(of = stores, max = 4.3, k = 19.2, n = 2)");
+  const r = ironRun(drug);
+  assert.equal(r.gaps.length, 0, "the phlebotomies stop");
+  assert.ok(r.lo > 42 && r.hi < 46, `held near target, band ${r.lo.toFixed(1)}-${r.hi.toFixed(1)}`);
+  // THE CONTRAST IS THE POINT: same hematocrit, opposite iron.
+  assert.ok(r.stores > 18, `and the stores stay full, got ${r.stores.toFixed(1)}`);
+  assert.ok(r.stores > ironRun(IRON).stores + 5,
+    "which is the difference between functional restriction and true deficiency");
+  // the window is narrow, and overshooting it is anaemia — the drug's real toxicity
+  const tooMuch = ironRun(IRON.replace(HEPMAX, "hill(of = stores, max = 5.0, k = 19.2, n = 2)"));
+  assert.ok(tooMuch.lo < 30, `overshoot is anaemia, got ${tooMuch.lo.toFixed(1)}`);
+});
+
+test("iron: pushing on the MARROW edge does nothing, because iron is what binds", () => {
+  // The file's real lesson, pinned. A model with one binding constraint can only
+  // report "inert" or "decisive", never "therapeutic" — and this is the inert half.
+  const base = ironRun(IRON);
+  const slowed = ironRun(IRON.replace(MATURE, "by = erythroblasts, k = 0.02)"));  // a sixth of normal
+  assert.ok(near(slowed.hct, base.hct, 0.5),
+    `hematocrit unmoved: ${base.hct.toFixed(2)} vs ${slowed.hct.toFixed(2)}`);
+  assert.ok(near(slowed.stores, base.stores, 0.5),
+    `stores unmoved: ${base.stores.toFixed(2)} vs ${slowed.stores.toFixed(2)}`);
+  assert.equal(slowed.gaps.length, base.gaps.length, "same number of phlebotomies");
+  // the one thing that DOES move: iron backs up in front of a slower marrow
+  assert.ok(slowed.plasma > base.plasma * 3,
+    `iron queues instead: plasma ${base.plasma.toFixed(3)} -> ${slowed.plasma.toFixed(3)}`);
+});
+
+test("clonal escape: the niche is conserved — drift returns share rather than draining the marrow", () => {
+  for (const k of [0.0004, 0.0024, 0.008]) {
+    const r = lifetime(k);
+    assert.ok(near(r.nicheMin, 100, 0.01) && near(r.nicheMax, 100, 0.01),
+      `stem-cell total stays 100 at k=${k}, saw ${r.nicheMin.toFixed(3)}..${r.nicheMax.toFixed(3)}`);
+  }
+});
+

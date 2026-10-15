@@ -1,0 +1,95 @@
+# bone — the skeleton defends a STRAIN, not a mass
+#
+# "Weight-bearing exercise is good for your bones" is an arrow with no interior.
+# Here is the interior, and it answers a question the arrow cannot: WHICH exercise,
+# and why lifting and jumping count while cycling and swimming do not.
+#
+# Bone is not a scaffold that wears out. It is continuously torn down and rebuilt,
+# and the thing the rebuilding crew steers by is MECHANICAL STRAIN — how much the
+# bone bends under load, measured in microstrain (µε; 1000 µε = 0.1% deformation).
+# Harold Frost called the controller the MECHANOSTAT: below roughly 1000-1500 µε
+# the skeleton reads "this bone is over-built for its job" and lets it thin; above
+# it, formation switches on. It is a thermostat, and strain is the temperature.
+#
+# The loop closes because of one fact that makes the whole thing a system rather
+# than an arrow:
+#
+#     STRAIN IS FORCE DIVIDED BY HOW MUCH BONE THERE IS.
+#
+# So thin bone strains MORE under the same load — which turns formation back on.
+# That is the negative feedback, and it is why bone loss plateaus instead of
+# running to zero. Same shape as blood-pressure.strombild: a level the body
+# defends. What is defended here is the strain, not the mass; the mass is just
+# whatever it takes to hold strain near the setpoint.
+#
+# Read the mechanism and the exercise question answers itself. The stimulus is
+# STRAIN, not effort, not calories, not heart rate:
+#
+#   • swimming, cycling      — high effort, near-zero bone strain → the dial barely moves
+#   • walking                — ~600-900 µε → below the setpoint; bone still drifts down
+#   • running                — ~1000-2000 µε → around the setpoint; holds
+#   • jumping, heavy lifting — ~2000-3000 µε → above it; formation switches on
+#
+# That is not a preference between cardio and weights. It is a claim about what
+# quantity the cell is measuring, and it is refutable.
+#
+#   try it: load = 1500 → mineral settles at 100 (the setpoint, by definition).
+#           drop to 500 (a desk and a walk) → ~65, and note strain only falls to
+#           ~770, not to 500/3: the controller gives up mass to defend strain.
+#           raise to 2500 (impact) → ~122. bed rest, load = 200 → ~60, the floor.
+#
+# THE FLOOR IS A CLAIM, NOT A FUDGE. `marrow -> mineral : constant(c = 0.3)` says
+# there is load-independent formation, and it is what puts a flat bottom (60 = c/k)
+# under disuse — below the threshold the floor stops caring how little load there
+# is. Delete that line and the model has no floor at all: formation becomes
+# load-only, bone tracks the load all the way down, and zero load gives zero bone.
+# (The strain loop still cushions the fall — a wheelchair-ish load of 200 lands
+# near 18 rather than 0 — but predicting the loss of four-fifths of a skeleton is
+# still false.) Every structure here is falsifiable that way; a test pins it.
+#
+# ONE TICK IS ROUGHLY ONE WEEK, and the honest lesson is in the clock: resorption's
+# k = 0.005 means a time constant near 200 ticks — about FOUR YEARS to finish
+# re-settling after a change in load. You cannot run this experiment on yourself in
+# a season. Whatever a twelve-week study measured, it was not this.
+#
+# WHAT IS REAL AND WHAT IS TUNED. Real: the setpoint (~1500 µε), the per-activity
+# strains, the fact that adaptation takes years rather than weeks, and the SHAPE of
+# every arrow. Tuned: every k, chosen so the model settles at 100 under habitual
+# load. The k's set the SCALE, not the STRUCTURE — and `mineral` is a percentage of
+# the mechanostat's own setpoint, not of "healthy". None of these are sourced here;
+# they are the class of number Sperrwerk's ledger would mark `assumed`.
+#
+# THE HOLE, STATED: one resorption constant serves both directions, so this model
+# loses and regains bone at the same speed. Real bone does not — disuse strips it in
+# months while loading rebuilds it over years, because formation lags resorption by
+# however long a remodeling unit takes to finish its cycle. Fixing that means
+# splitting the crew into a resorbing and a forming stage, and the interesting part
+# is that the lag would then be A STOCK, not a new `delay` keyword.
+#
+# THE GAP THIS MODEL FORCES: strain is force ÷ bone — an ALGEBRAIC value, computed
+# instantly from two others, not something that accumulates. Strombild has only
+# stocks, so it is written here as a fast stock that relaxes in ~half a tick
+# (inflow ∝ load, outflow ∝ strain × mineral, so it settles at load/mineral). It
+# computes the right number, but it is arithmetic wearing a bucket, and its
+# relaxation rate is invented. The language wants an `aux`: a node that is computed,
+# never integrated. And a second, older gap goes from theoretical to acute here —
+# the real question is "what happens if I START lifting at 45", which is a step
+# change partway through a run, not a re-run with a different init.
+
+node load    : range(0, 3000), init(1500) @ bucket(fill = water)  # THE DIAL: peak force through the bone, in strain-equivalents
+node strain  : range(0, 5000), init(1500) @ bucket(fill = water)  # what the bone actually feels, µε — force ÷ bone
+node mineral : range(0, 150),  init(100)  @ bucket(fill = dots)   # bone mineral, % of the mechanostat's setpoint
+
+external ground      # the ground reaction and the muscle pull — where load enters the bone
+external stiffness   # strain the bone carries without complaint; more bone absorbs more
+external osteoblast  # the cells that lay bone down
+external osteoclast  # the cells that chew it up
+external marrow      # basal, load-independent remodeling — the floor under disuse
+
+ground     -> strain     : proportional(of = load, k = 2.0)                  # the force arrives
+strain     -> stiffness  : product(of = strain, by = mineral, k = 0.02)      # thicker bone soaks up more strain → strain = load / bone
+osteoblast -> mineral    : hill(of = strain, max = 0.4, k = 1500, n = 4)     # THE MECHANOSTAT: formation switches on above ~1500 µε
+marrow     -> mineral    : constant(c = 0.3)                                 # basal formation — no load required
+mineral    -> osteoclast : proportional(of = mineral, k = 0.005)             # continuous resorption; τ ≈ 200 ticks ≈ 4 years
+
+pathway remodeling : ground->strain, strain->stiffness, osteoblast->mineral, marrow->mineral, mineral->osteoclast

@@ -1,0 +1,118 @@
+# vo2max — two arms on two clocks, multiplied
+#
+# "Cardio is good for you" is the same arrow with no interior as bone's. The
+# interior here answers a sharper question — HIIT or long slow distance — and it
+# answers it with a multiplication sign.
+#
+# VO2max is how fast you can consume oxygen, and Fick says it is a PRODUCT:
+#
+#     VO2max  =  cardiac output  ×  (a-v)O2 difference
+#                DELIVERY (central)   EXTRACTION (peripheral)
+#
+# Two arms, and they multiply. Max out either alone and you get a mediocre number,
+# because the other one is the ceiling. That is the whole argument for training
+# both, and it is structural — it falls out of the × , not out of a study.
+#
+#   DELIVERY  — blood volume → stroke volume → cardiac output. Trained by sessions
+#               that actually drive cardiac output near maximum. It has a
+#               THRESHOLD: below ~70% of VO2max there is little central stimulus,
+#               so easy miles buy almost none of this. Fast: plasma volume expands
+#               in days-to-weeks, and collapses just as fast (τ ≈ 4 weeks here).
+#
+#   EXTRACTION — mitochondrial and capillary density in the trained muscle.
+#               Trained by TIME UNDER AEROBIC LOAD. It has no threshold; it has a
+#               DOSE, roughly linear in hours. Slow both ways (τ ≈ 16 weeks).
+#
+# INTENSITY IS A THRESHOLD, VOLUME IS A DOSE. That one sentence is the model's
+# actual claim, and it is refutable: it says the two arms respond to different
+# quantities, so a study that varies only one of them cannot see the interaction.
+#
+#   try it (dials are `intensity` = % of VO2max the hard sessions hit, and
+#   `volume` = hours/week):
+#     sedentary        intensity 40, volume  1  →  ~33
+#     volume only      intensity 40, volume 12  →  ~43   (+10)
+#     intensity only   intensity 95, volume  1  →  ~40   (+7)
+#     both             intensity 95, volume 12  →  ~53   (+20)
+#   +10 and +7 alone, +20 together. THE COMBINATION BEATS THE SUM OF THE PARTS,
+#   which is what a product does and a sum cannot. Polarized training, derived.
+#
+# THE TWO CLOCKS ARE THE ACTIONABLE PART. Stop training entirely from a trained
+# ~45: two weeks off costs ~7%, and it is mostly the fast arm — delivery has given
+# back ~40% of its gain while extraction has barely moved (~12%). That comes back
+# on delivery's clock, about a month. Twelve weeks off costs ~22%, and now the
+# slow arm is half gone too, which takes four months to rebuild. Same word,
+# "detraining", two completely different situations, and no single half-life can
+# tell them apart. A vacation is not a setback; a season is.
+#
+# WHY THIS MODEL AND NOT BONE IS THE ONE YOU CAN TEST ON YOURSELF. A good lab
+# VO2max test runs ~3% CV, and eight weeks of training moves it ~22% here — signal
+# beats noise about sevenfold, so an N-of-1 on yourself is possible. Bone is the
+# opposite: DEXA precision error is 1-2% and BMD moves ~1%/yr, so an individual can
+# never resolve it, ever. The mechanism decides which questions are askable BEFORE
+# any data is collected, which is cheaper than running the study to find out.
+#
+# TRAINABILITY IS ONE NUMBER, AND IT IS THE PERSON. `max = 0.26` on the delivery
+# hill is how much central adaptation is available to you. HERITAGE found that
+# response to an identical program ranges from roughly nothing to ~40% across
+# people, and that it is heritable. Change that one constant and you have a
+# different person. A population mean destroys exactly this parameter — which is
+# the whole complaint about the literature, expressed as a line of source.
+#
+# ONE TICK IS ONE WEEK.
+#
+# WHAT IS REAL AND WHAT IS TUNED. Real: Fick's product, the central/peripheral
+# split, the intensity threshold, the dose-response to volume, the ordering of the
+# time constants (plasma fast, mitochondria slow), and the detraining asymmetry.
+# Tuned: every k, chosen so a sedentary person sits near 32 ml/kg/min and a
+# well-trained recreational one near 45. Nothing here is sourced; Sperrwerk's
+# ledger would mark all of it `assumed`.
+#
+# THE HOLES, STATED.
+#   • It gains too fast. Sedentary → well-trained is ~+35% here, which is about
+#     right as a destination, but the model gets most of the way in a few months
+#     and reports ~+22% at eight weeks against a reported 10-20%. The DETRAINING
+#     side is the better-calibrated one (~7% at two weeks, which matches), and
+#     when the two could not both be right, detraining was chosen — it is the arm
+#     carrying the claim that a vacation and a season are different things.
+#   • No cardiac remodeling. Left-ventricular volume is a real, slow (months to
+#     years) part of the delivery arm and is simply absent — so this model is
+#     about the first six months in a previously untrained person, where plasma
+#     volume dominates, and it will understate what a decade of training does.
+#   • HRmax declines with age and sets a hard ceiling on delivery. Not here.
+#   • Nothing stops you dialling intensity 100 AND volume 15. Real training is
+#     bounded by recovery, and the two dials genuinely trade against each other.
+#     That constraint is the whole reason the substrate needs a SHARED BUDGET
+#     across models rather than one model per tissue — see substrate.org.
+#
+# THE GAP, CONFIRMED: `vo2max` is not a stock. It is Fick's product, computed
+# instantly from two capacities, and it is written here as a fast stock (τ = 0.25
+# tick) for the same reason `strain` is in bone.strombild. TWO INDEPENDENT MODELS
+# HAVE NOW FORCED THE SAME MISSING THING — an `aux` node, computed and never
+# integrated. That is no longer a one-off; it is the next feature.
+
+node intensity : range(0, 100), init(85)   @ bucket(fill = water)  # DIAL: % of VO2max the hard sessions hit
+node volume    : range(0, 15),  init(6)    @ bucket(fill = water)  # DIAL: hours/week of aerobic work
+node plasma    : range(0, 8),   init(4.79) @ bucket(fill = water)  # DELIVERY: blood volume → stroke volume. τ = 4 wk
+node mito      : range(0, 8),   init(4.69) @ bucket(fill = dots)   # EXTRACTION: mitochondria + capillaries. τ = 16 wk
+node vo2max    : range(0, 80),  init(45)   @ bucket(fill = dots)   # ml/kg/min — the readout
+
+external cardiac_stress  # repeated near-maximal cardiac output — the central stimulus
+external aerobic_load    # time under aerobic load — the peripheral stimulus
+external baseline        # what an untrained body already has, no training required
+external renal           # plasma volume is given back renally when the stimulus stops
+external mitophagy       # mitochondria are turned over whether you train or not
+external fick            # NOT physiology: the aux fudge — vo2max is a product, not a stock
+external measured        # …and its matching sink, so the product reads out at 2·plasma·mito
+
+cardiac_stress -> plasma : hill(of = intensity, max = 0.26, k = 70, n = 6)  # THRESHOLD: needs near-max cardiac output
+baseline       -> plasma : constant(c = 1.0)                                # untrained blood volume — the floor
+plasma         -> renal  : proportional(of = plasma, k = 0.25)              # τ = 4 weeks: fast on, fast off
+
+aerobic_load -> mito      : proportional(of = volume, k = 0.0072)           # DOSE: linear in hours, no threshold
+baseline     -> mito      : constant(c = 0.25)                              # untrained mitochondrial density
+mito         -> mitophagy : proportional(of = mito, k = 0.0625)             # τ = 16 weeks: slow both ways
+
+fick   -> vo2max   : product(of = plasma, by = mito, k = 8.0)               # FICK: delivery × extraction
+vo2max -> measured : proportional(of = vo2max, k = 4.0)                     # fast readout (the aux fudge)
+
+pathway training : cardiac_stress->plasma, baseline->plasma, plasma->renal, aerobic_load->mito, baseline->mito, mito->mitophagy, fick->vo2max, vo2max->measured
