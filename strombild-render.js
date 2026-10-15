@@ -19,7 +19,7 @@
 "use strict";
 const S = (typeof window !== "undefined") && window.Strombild;
 if (!S) { if (typeof console !== "undefined") console.error("strombild-render.js: load strombild.js first"); return; }
-const { parseModel, Engine, layout, influences, knifeEdge, splitChannels, splitTop } = S;
+const { parseModel, Engine, layout, fitView, influences, knifeEdge, splitChannels, splitTop } = S;
 
 const FLASH_MS = 650;
 const C = {
@@ -465,9 +465,12 @@ function drawPausedBadge(ctx, W, H) {
   ctx.restore();
 }
 
-function render(ctx, model, engine, pos, W, H, time, thresholds, eventFlash, running) {
+function render(ctx, model, engine, pos, view, W, H, time, thresholds, eventFlash, running) {
   if (running) waveClock = time;   // freeze the surface phase while paused
   ctx.clearRect(0, 0, W, H);
+  // a diagram taller than the canvas is drawn smaller, not clipped (fitView)
+  ctx.save();
+  ctx.translate(view.tx, view.ty); ctx.scale(view.s, view.s);
   const active = new Set(engine.activeEdges().map(e => e.id));
 
   // edges first (under the nodes)
@@ -533,7 +536,8 @@ function render(ctx, model, engine, pos, W, H, time, thresholds, eventFlash, run
     }
   }
 
-  // paused overlay — drawn last so it sits above everything
+  ctx.restore();
+  // paused overlay — drawn last so it sits above everything, unscaled
   if (!running) drawPausedBadge(ctx, W, H);
 }
 
@@ -561,6 +565,7 @@ function createApp(opts) {
   let seenFires  = new Map();   // event name -> fire count already reflected in the flashes
   let running = false, valid = false;
   let W = 0, H = 0, lastTime = 0, statsAccum = 0;
+  let view = { s: 1, tx: 0, ty: 0 };   // fitView result: identity until a diagram overflows
 
   const currentSpeed = () => speedIn ? parseFloat(speedIn.value) : DEFAULT_SPEED;
 
@@ -582,7 +587,7 @@ function createApp(opts) {
     canvas.width = r.width * dpr; canvas.height = r.height * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     W = r.width; H = r.height;
-    if (model) pos = layout(model, W, H);
+    if (model) { pos = layout(model, W, H); view = fitView(pos, W, H); }
   }
 
   // --- validator report (skipped if no element) -----------------------
@@ -727,7 +732,7 @@ function createApp(opts) {
       if (running) engine.advance(real * currentSpeed());
       else engine.derivatives(); // keep flows/net fresh for the readouts
       pumpEventFlashes(time);
-      render(ctx, model, engine, pos, W, H, time, thresholds, eventFlash, running);
+      render(ctx, model, engine, pos, view, W, H, time, thresholds, eventFlash, running);
       statsAccum += real;
       if (statsAccum > 0.1) { renderStats(); statsAccum = 0; }
     } else {
@@ -738,6 +743,11 @@ function createApp(opts) {
 
   // --- seeding: drag a bucket to set its level --------------------------
   let seeding = null;
+  // pointer -> layout coordinates, undoing the fitView scale
+  function toLayout(e) {
+    const r = canvas.getBoundingClientRect();
+    return { x: (e.clientX - r.left - view.tx) / view.s, y: (e.clientY - r.top - view.ty) / view.s };
+  }
   function nodeAt(px, py) {
     for (const [name, p] of pos) {
       if (p.kind !== "node") continue;
@@ -753,14 +763,13 @@ function createApp(opts) {
   }
   canvas.addEventListener("pointerdown", e => {
     if (!engine) return;
-    const r = canvas.getBoundingClientRect();
-    const hit = nodeAt(e.clientX - r.left, e.clientY - r.top);
-    if (hit) { seeding = hit; seedFromPointer(hit, e.clientY - r.top); canvas.setPointerCapture(e.pointerId); }
+    const q = toLayout(e);
+    const hit = nodeAt(q.x, q.y);
+    if (hit) { seeding = hit; seedFromPointer(hit, q.y); canvas.setPointerCapture(e.pointerId); }
   });
   canvas.addEventListener("pointermove", e => {
     if (!seeding) return;
-    const r = canvas.getBoundingClientRect();
-    seedFromPointer(seeding, e.clientY - r.top);
+    seedFromPointer(seeding, toLayout(e).y);
   });
   canvas.addEventListener("pointerup", () => {
     if (seeding) writeInitToSource(seeding.name, engine.state.get(seeding.name));
@@ -806,6 +815,10 @@ function createApp(opts) {
   if (pathwaySel) pathwaySel.addEventListener("change", () => { if (engine) { engine.setPathway(pathwaySel.value); engine.derivatives(); computeThresholds(); } });
   if (speedIn)  speedIn.addEventListener("input", () => { if (speedOut) speedOut.textContent = parseFloat(speedIn.value).toFixed(speedIn.value % 1 ? 1 : 0) + "×"; });
   window.addEventListener("resize", fit);
+  // the panels around the canvas change size after load — the stats panel
+  // fills in once the engine runs and the stage shrinks to make room — and
+  // no window resize fires for that. Re-fit whenever the canvas itself moves.
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(() => fit()).observe(canvas);
 
   function doReset() {
     if (!engine) return;

@@ -685,6 +685,35 @@ function layout(model, W, H) {
 }
 
 /* ---------------------------------------------------------------------
+ * FIT VIEW — layout never packs a rank tighter than MIN_ROW, so a crowded
+ * column on a short canvas overflows by design (clip the bottom, not the
+ * first label). The iron model's five sources did exactly that on a laptop.
+ * This turns the overflow into a uniform scale instead: the same picture,
+ * smaller, centred. Pure; the renderer applies it and inverts it for hits.
+ *   { s, tx, ty }  with  screen = layout * s + (tx, ty)
+ * ------------------------------------------------------------------- */
+function fitView(pos, W, H) {
+  let top = Infinity, bot = -Infinity, left = Infinity, right = -Infinity;
+  for (const p of pos.values()) {
+    // room for what is drawn outside the box: a node's label band above, an
+    // event glyph's name above and guard below, a little breathing space else
+    const above = p.kind === "node" ? 30 : p.kind === "event" ? 24 : 8;
+    const below = p.kind === "event" ? 24 : 8;
+    top = Math.min(top, p.y - p.h / 2 - above);
+    bot = Math.max(bot, p.y + p.h / 2 + below);
+    left = Math.min(left, p.x - p.w / 2 - 40);
+    right = Math.max(right, p.x + p.w / 2 + 40);
+  }
+  const identity = { s: 1, tx: 0, ty: 0 };
+  if (!(bot > top) || !(right > left)) return identity;
+  const s = Math.min(1, H / (bot - top), W / (right - left));
+  if (s >= 1) return identity;
+  // scale about the content's own centre, then centre that in the canvas
+  const cx = (left + right) / 2, cy = (top + bot) / 2;
+  return { s, tx: W / 2 - cx * s, ty: H / 2 - cy * s };
+}
+
+/* ---------------------------------------------------------------------
  * INFLUENCES — the couplings that are NOT material flows: a rate law reading
  * a node via `of`, and an event reading its guard / writing its actions. These
  * close every feedback loop but carry no mass, so they are drawn as dashed
@@ -865,6 +894,6 @@ return {
   VERSION: "0.1",
   RATE_LAWS, REACTION_LAWS, NODE_VISUALS, EDGE_VISUALS, FILL_KINDS, COMPARATORS, ASSIGN_OPS,
   isNumber, parseValue, splitTop, splitChannels, parseCall,
-  parseModel, Engine, layout, influences, equilibria, knifeEdge, fateScan,
+  parseModel, Engine, layout, fitView, influences, equilibria, knifeEdge, fateScan,
 };
 });

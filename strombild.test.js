@@ -1137,6 +1137,38 @@ test("crowded rank keeps buckets from overlapping their neighbour's label", () =
     assert.ok(ys[i] - ys[i - 1] >= 104 + 20, `rank rows too tight: ${ys[i] - ys[i - 1]}`);
 });
 
+test("fitView is the identity when the layout fits, and scales it in when it does not", () => {
+  // six held dials in one rank: at MIN_ROW spacing they need ~900px of height
+  const { model } = ok(`
+    node a : range(0, 100), init(50)
+    node b : range(0, 100), init(50)
+    node c : range(0, 100), init(50)
+    node d : range(0, 100), init(50)
+    node e : range(0, 100), init(50)
+    node f : range(0, 100), init(50)
+  `);
+  const tall = S.layout(model, 800, 1200);
+  assert.deepEqual(S.fitView(tall, 800, 1200), { s: 1, tx: 0, ty: 0 });
+  const short = S.layout(model, 800, 400);
+  const v = S.fitView(short, 800, 400);
+  assert.ok(v.s < 1, `expected a shrink, got s=${v.s}`);
+  // every box, with its label band, lands inside the canvas once scaled
+  for (const p of short.values()) {
+    const top = (p.y - p.h / 2 - 30) * v.s + v.ty, bot = (p.y + p.h / 2) * v.s + v.ty;
+    assert.ok(top >= 0 && bot <= 400, `box ${top.toFixed(0)}..${bot.toFixed(0)} escapes a 400px canvas`);
+  }
+});
+
+test("fitView: the iron model fits a laptop-height stage (the file that forced it)", () => {
+  const r = S.parseModel(fs.readFileSync(path.join(DIR, "iron.strombild"), "utf8"));
+  const pos = S.layout(r.model, 1000, 520);
+  const v = S.fitView(pos, 1000, 520);
+  for (const [name, p] of pos) {
+    const bot = (p.y + p.h / 2) * v.s + v.ty;
+    assert.ok(bot <= 520, `${name} falls off the bottom: ${bot.toFixed(0)} > 520`);
+  }
+});
+
 /* ---------------- the on-disk example files all parse ---------------- */
 
 // read the directory rather than listing files: a hand-kept list silently stops
