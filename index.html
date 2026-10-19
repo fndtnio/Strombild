@@ -1377,25 +1377,7 @@ red_cells   -> spleen      : expire()                                           
 
 pathway body : kidney->epo, epo->clearance, marrow->progenitors, progenitors->apoptosis, progenitors->red_cells, red_cells->spleen`,
   mg25:
-`# magnesium-25 as a dial: what would the claim have to be worth?
-#
-# A collaborator proposes that the MAGNETIC ISOTOPE EFFECT reaches erythropoiesis:
-# 25Mg has nuclear spin 5/2 while 24Mg and 26Mg have none, so in a reaction running
-# through a radical pair, hyperfine coupling changes the branching and the rate.
-# Buchachenko's group reported ATP synthesis 2–3x faster with 25Mg. The proposal is
-# that shifting your isotope ratio shifts red-cell production, that the ratio is
-# then locked into the cell for 120 days, and that the whole thing beats out some
-# harmonic you could time a therapy to.
-#
-# THIS FILE TAKES NO VIEW ON WHETHER THE EFFECT IS REAL. It is built so that the
-# claim is a number you turn, and it answers one question the argument cannot:
-# how big would the effect have to be before a hematocrit meter could see it?
-# That question has an answer even while the physics is disputed.
-#
-#   (The physics is disputed. Buchachenko's positive results come essentially from
-#    one programme; the one serious independent replication — Crotty, Silkstone,
-#    Coey et al., PNAS 2012 — found no isotope effect on ATP production by creatine
-#    kinase and no field effect from 3 to 1000 mT. Treat E below as contested.)
+`# magnesium-25 as a dial
 #
 # THE DIAL is E, the EXCESS ATP rate at pure 25Mg. E = 1.6 is the 260% claim.
 # The \`atp\` index must read 1.0 at natural abundance (f25 = 0.10) and 1+E at pure,
@@ -1419,44 +1401,6 @@ pathway body : kidney->epo, epo->clearance, marrow->progenitors, progenitors->ap
 #     0.5000   an ENRICHED supplement       1.7111     48.433     +3.03
 #     0.9000   near-pure 25Mg               2.4222     50.446     +5.05
 #
-# THE RESULT, and it is not the one either side expects. The claim does not have to
-# be wrong for the DIETARY story to fail. All magnesium in food and in ordinary
-# supplements sits at natural abundance, and biological magnesium fractionation is
-# a per-mil business — a sheep's feces run about 0.6 per mil off its diet. So "the
-# supplement I take today" moves f25 by well under a tenth of a percent, and the
-# model says that is +0.003 hematocrit points. A hematocrit is reproducible to
-# about half a point. The predicted effect is some 170x BELOW the noise floor of
-# the instrument you would measure it with. To drag diet up to a one-point change
-# you need E near 1600 — a 160,000% isotope effect, a thousand times the disputed
-# claim. The dietary route is dead on arithmetic, and no one has to win the
-# argument about radical pairs to kill it.
-#
-# THE SAME ARITHMETIC KEEPS THE OTHER ROUTE ALIVE, which is why this is worth
-# modelling rather than dismissing. An ENRICHED 25Mg supplement at 20% predicts
-# nearly a full hematocrit point, and at 50% predicts three. Those are not subtle.
-# That is a real, falsifiable, affordable experiment, and it is the experiment the
-# claim actually implies — not a diet study. Enriched 25Mg is a research chemical,
-# and it is in fact what Buchachenko's group proposed as a therapy.
-#
-# AND THE HARMONIC IS REAL, BUT IT IS NOT ISOTOPIC. Start the supplement at day 0
-# and the hematocrit does not climb smoothly to its new level. It overshoots and
-# rings, peaking at days 120, 243, 371, 502, 635, 768 — because the cohort the
-# supplement over-produced dies all at once, one red-cell lifespan later. Twelve
-# turning points. Delete \`transit(120)\`, put the old \`proportional(k = 0.00833)\`
-# back, and the ringing vanishes completely: zero turning points, a smooth climb
-# to the same endpoint. So the stepped cycle the proposal predicts is a real
-# prediction of the 120-day lifespan — see \`red-cell-cohort.strombild\` — and it
-# appears whatever moved production. Isotopes set the SIZE of the step. The
-# conveyor sets the RINGING. They are separable, and only one of them is disputed.
-#
-# What this does NOT claim: that the magnetic isotope effect is real; that ATP
-# supply limits erythropoiesis at all (if some other step is rate-limiting, every
-# number above collapses to zero — the same trap \`iron.strombild\` fell into); that
-# \`atp\` is a quantity of ATP rather than an index normalised to 1; that a linear
-# interpolation in f25 is the right shape for a spin effect; that 25Mg lodged in a
-# red cell does anything on the way back out, which is modelled here as nothing.
-# The model is a converter from a disputed claim to a measurable consequence. Its
-# job is to make the claim cost something.
 
 node epo         : range(0, 400),  init(10)   @ bucket(fill = water)    # plasma erythropoietin, mU/mL
 node progenitors : range(0, 400),  init(50)   @ bucket(fill = dots)     # EPO-dependent erythroid precursors
