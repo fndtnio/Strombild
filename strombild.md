@@ -67,11 +67,53 @@ node <name> : range(<min>, <max>)  @ <visual>
 - `: range(min, max)` — the node's bounds. The value is clamped to this range.
   Optional; if omitted, the node is unbounded.
 - `@ <visual>` — the visual primitive. Optional; defaults to `bucket`.
+- `: transit(<time>)` — makes the node a **conveyor**: its contents carry an age,
+  and what goes in comes out exactly `<time>` later. Optional; without it a stock
+  is memoryless. A conveyor's only outflow is `expire()`.
 
 ```
 node tub : range(0, 50)
 node crowd : range(0, 50) @ bucket
+node red_cells : range(0, 80), init(45), transit(120)   # a conveyor: in on day 3, out on day 123
 ```
+
+### Conveyors — a stock that remembers an age
+
+An ordinary stock is memoryless. `proportional(of = x, k = 1/120)` is routinely
+read as "a 120-day life", and it is not: it means each unit has a 1-in-120 chance
+of leaving today whatever its age, an exponential whose *mean* is 120 and whose
+most likely age at departure is **zero**. Measured: mean 116, standard deviation
+109, peak outflow on day 0. For a bathtub that is right. For a red cell, which is
+cleared *by age* at around 120 days, it is not.
+
+`transit(T)` makes the stock a conveyor and `expire()` is the edge that collects
+what finishes. The node's **value is still a single number** — the total it holds
+— so every other law reads it unchanged and never learns it has an inside. That
+is the property that makes the feature cheap: `repress(of = red_cells, ...)`
+upstream needs no edit at all.
+
+```
+node red_cells : range(0, 80), init(45), transit(120) @ bucket(fill = water)
+red_cells -> spleen : expire()
+```
+
+`init` on a conveyor spreads the stock **evenly over the last T**, so it discharges
+evenly over the next T — the steady state. Loading it all at age 0 instead would
+fire the whole initial stock back out as one pulse at `t = T`.
+
+An **event** on a conveyor scales every cohort alike: `red_cells -= 4` draws from
+all ages, as phlebotomy does, and what is left still finishes on its original
+schedule. The language refuses the two ways to misuse it — `expire()` from a node
+with no `transit`, and any other rate law on a conveyor's outflow.
+
+**Why this could not be faked, which is the only reason it exists.** The standard
+workaround is a chain of N ordinary stocks, whose spread narrows as 1/√N: 12
+stages still gives a standard deviation of 35 days on a 120-day mean, and you need
+120 stages to reach 11. Long, but survivable. What kills it is the *loop*: split
+`red_cells` into 120 stages and the kidney can no longer read the hematocrit,
+because **no rate law in this language reads a sum of nodes**. The feedback
+physically cannot close. That is what forced `transit`, and nothing smaller would
+have done it.
 
 ---
 
@@ -139,6 +181,7 @@ Current rate laws:
 | `adjust`         | Negative feedback toward a setpoint: `k * (target - of)`. May be negative.  | `of`, `target`, `k`  |
 | `product`        | Two stocks multiplied: `k * of * by`. The only edge rate that reads a *second* node. | `of`, `by`, `k` |
 | `repress`        | The inhibitory hill: full at 0, half at `k`, falling as `of` rises. | `of`, `max`, `k`, `n` |
+| `expire`         | A conveyor's discharge: whatever finished ageing. Takes no parameters — the queue sets the rate. Legal only from a node with `transit`. | *(none)* |
 
 ```
 constant(c = 3)
@@ -852,6 +895,86 @@ the next feature.
 
 ---
 
+### Red-cell cohort — the assumption hiding inside a rate law
+
+`red-cell-cohort.strombild`. This is `erythropoiesis.strombild` with one edge
+changed, and the change is not to the biology. It is to something that had been
+asserted in a comment and never modelled.
+
+```
+before:  red_cells -> spleen : proportional(of = red_cells, k = 0.00833)   # "a 120-day life"
+after:   node red_cells : ... transit(120)
+         red_cells -> spleen : expire()
+```
+
+The old comment was false in the way that matters. An exponential with a 120-day
+mean puts its peak outflow on day 0, so the file's red cells were dying mostly as
+newborns. The new edge clears them by age.
+
+What that buys is a behaviour the old file could not produce **at any parameter
+value**. Start anemic at hematocrit 35 and let the loop recover: EPO rises, the
+marrow runs hot, and the count is normal within a month. Then watch day 120. The
+cohort over-produced to fix the anemia dies all at once, one lifespan later, and
+the loop has to replace it — so the recovery *echoes*, ringing at the period of a
+red cell's life and damping over years.
+
+```
+peaks:    day 120: 47.05    day 240: 46.95    day 364: 46.74    day 491: 46.49
+troughs:  day 131: 42.14    day 266: 43.49    day 402: 44.11    day 538: 44.47
+```
+
+Eleven turning points in 800 days. Run the same file with the old `proportional`
+edge and you get **zero**: a flat 45.40 for ever. This is delay-driven oscillation,
+the mechanism behind cyclic hematopoiesis — a long fixed lag inside a negative
+feedback loop, needing no new physics, only a stock that remembers an age. The
+file is honest that a conveyor is the *opposite* simplification from an
+exponential: perfectly sharp where the other is perfectly memoryless. Real
+lifespan is near the sharp end but not at it.
+
+### Magnesium-25 — turning a disputed claim into a measurable consequence
+
+`mg25-dial.strombild`. A collaborator proposed that the **magnetic isotope
+effect** reaches erythropoiesis: `25Mg` has nuclear spin where `24Mg` and `26Mg`
+have none, so an ATP step running through a radical pair could run faster, and
+shifting your isotope ratio could shift red-cell production.
+
+The physics is contested — Buchachenko's group reported 2–3×, and the one serious
+independent replication (Crotty, Silkstone, Coey *et al.*, PNAS 2012) found no
+effect — and the model **takes no view on it**. Instead the claim becomes a dial,
+`E`, the excess ATP rate at pure `25Mg`, and the file answers a question the
+argument cannot: *how big would the effect have to be before an instrument could
+see it?* That has an answer even while the physics is unsettled.
+
+Granting the claim in full (`E = 1.6`, the 260% figure):
+
+| `f25` | reachable by | hematocrit | change |
+|---|---|---|---|
+| 0.1000 | natural abundance | 45.400 | — |
+| 0.1003 | diet, a generous 3‰ | 45.403 | +0.003 |
+| 0.2000 | an **enriched** supplement | 46.316 | +0.92 |
+| 0.5000 | an **enriched** supplement | 48.433 | +3.03 |
+
+The result is not the one either side expects. **The claim does not have to be
+wrong for the dietary story to fail.** All food and ordinary supplements sit at
+natural abundance and biological magnesium fractionation is a per-mil business, so
+diet moves `f25` by under a tenth of a percent — which this model says is +0.003
+hematocrit points, roughly 170× *below* the reproducibility of the instrument you
+would measure it with. Dragging that to a one-point change needs `E ≈ 1600`, a
+thousand times the disputed claim. The dietary route dies on arithmetic, with the
+radical-pair argument left entirely untouched.
+
+And the same arithmetic keeps the other route alive, which is why this was worth
+modelling rather than dismissing: an **enriched** supplement at 20% predicts nearly
+a full hematocrit point. That is a real, cheap, falsifiable experiment, and it is
+the one the claim actually implies.
+
+The two features meet in the last finding. Switch the supplement on and the
+hematocrit does not climb smoothly — it overshoots and rings, peaking at days 120,
+243, 371, 502. Delete `transit(120)` and the ringing vanishes while the endpoint
+stays. So the "harmonic" the proposal predicted is real, and it belongs to the
+**red cell's lifespan**, not to the isotope. Isotopes set the size of the step; the
+conveyor sets the ringing. They are separable, and only one of them is disputed.
+
 ## How it runs (engine sketch)
 
 Each step of the time loop:
@@ -900,8 +1023,16 @@ integration rather than one-pass evaluation.
   resorption constant for both directions, but real bone is lost fast and regained
   slowly, and formation lags resorption by the months a remodeling unit takes to
   complete. Splitting the crew into a resorbing and a forming stage would give the
-  lag — and the delay would be *a stock*, not a new operator, which is worth knowing
-  before anyone adds a `delay`.
+  lag — and that lag really is *a stock*, not a new operator.
+  **Resolved in part, and the old advice here was half wrong.** This bullet used to
+  end "which is worth knowing before anyone adds a `delay`", and for *bone* it still
+  holds: a soft lag is a stock, and bone needs no new keyword. But *red-cell-cohort*
+  found the case it does not cover. A **fixed-age** delay inside a feedback loop
+  cannot be built from stocks at all — not because the chain is long, but because
+  splitting the stock destroys the loop: no rate law reads a sum, so the sensor
+  loses sight of the total it is supposed to defend. That forced `transit`. The rule
+  the episode leaves behind is sharper than the old one: *a lag is a stock; an age
+  is not.*
 - **Orbit / fate detection** — classifying whether a trajectory rests, loops, or
   is latched. First piece landed: `fateScan` reads the latched on/off *combination*
   of a set of stocks as one input is swept (the French flag), with `{from:"lo"|"hi"}`

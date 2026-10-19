@@ -133,6 +133,15 @@ node --test
   loop (kidney → EPO → marrow → red cells → kidney), and polycythemia vera as the same
   model with one edge's dependency on EPO deleted: high red cells, low EPO, a
   phlebotomy sawtooth. The molecular end of the same story is in `../Schaltwerk`.
+- `examples/red-cell-cohort.strombild` — the same loop with red cells cleared by
+  **age** instead of by chance (`transit(120)` + `expire()`). An anemia corrected
+  today comes back as an echo in four months, because the cohort that fixed it dies
+  all at once. The memoryless version cannot show this at any parameter value.
+- `examples/mg25-dial.strombild` — a collaborator's claim that magnesium-25 speeds
+  up red-cell production, built as a **dial** rather than argued about. It reports
+  what the claim would have to be worth: diet cannot reach the noise floor of a
+  hematocrit even granting the claim in full, while an enriched supplement predicts
+  a measurable effect. A worked example of making a claim cost something.
 
 ## Embedding
 

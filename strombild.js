@@ -40,6 +40,12 @@ const RATE_LAWS = {
   // Both are reads, so each draws its own influence arrow. (Reactions' mass_action
   // multiplies *consumed* inputs; this multiplies two nodes without consuming either.)
   product:      { required: ["by", "k"],       reads: true, readsBy: true },
+  // the discharge of a CONVEYOR (a node with transit(T)): the flow is whatever
+  // finished ageing this substep, so it takes no parameters — the queue sets it.
+  // Forced by red-cell lifespan: `proportional` spreads a "120-day life" over an
+  // exponential whose most likely age at death is zero, and no chain of ordinary
+  // stocks can stand in, because no rate law can read a sum (see transit below).
+  expire:       { required: [],                reads: false, fromTransit: true },
 };
 // Reaction rate laws live on a pathway, not an edge: their rate reads ALL the
 // reaction's inputs at once (which an edge, seeing one node via `of`, cannot).
@@ -148,7 +154,7 @@ function parseModel(src) {
     if (!name) return err(ln, "node has no name");
     if (model.nodes.has(name)) warn(ln, `node "${name}" redeclared`);
 
-    let range = null, visual = "bucket", fill = "water", init = null, threshold = null;
+    let range = null, visual = "bucket", fill = "water", init = null, threshold = null, transit = null;
     if (channels[":"]) {
       // the definition channel is a comma-list of clauses: range(...), init(...)
       for (const raw of splitTop(channels[":"], ",")) {
@@ -162,8 +168,12 @@ function parseModel(src) {
           const v = call.args.length ? call.args[0] : call.params.value;
           if (typeof v === "number") init = v;
           else err(ln, `init needs a number; got "${clause}"`);
+        } else if (call.name === "transit") {
+          const v = call.args.length ? call.args[0] : call.params.value;
+          if (typeof v === "number" && v > 0) transit = v;
+          else err(ln, `transit needs a positive number of time units; got "${clause}"`);
         } else {
-          err(ln, `unknown node definition "${call.name}" (expected range or init)`);
+          err(ln, `unknown node definition "${call.name}" (expected range, init or transit)`);
         }
       }
     }
@@ -187,7 +197,7 @@ function parseModel(src) {
     if (init != null && range && (init < range[0] || init > range[1]))
       warn(ln, `init ${init} is outside range(${range[0]}, ${range[1]}) — will be clamped`);
 
-    model.nodes.set(name, { name, range, init, visual, fill, threshold });
+    model.nodes.set(name, { name, range, init, visual, fill, threshold, transit });
     model.order.push(name);
   }
 
@@ -395,6 +405,25 @@ function parseModel(src) {
       err(e.line, `${e.rate.law}(...) on ${e.src}->${e.dest}: "${e.dest}" needs range(min, max) — backpressure needs a capacity`);
   }
 
+  // a CONVEYOR (transit) discharges by age, so its only outflow is expire(), and
+  // expire() means nothing anywhere else. Checked both ways.
+  for (const e of model.edges) {
+    if (!e.rate) continue;
+    const src = model.nodes.get(e.src);
+    if (e.rate.law === "expire" && (!src || src.transit == null))
+      err(e.line, `expire() on ${e.src}->${e.dest}: "${e.src}" must be a node with transit(T) — only a conveyor has an age to finish`);
+    if (e.rate.law !== "expire" && src && src.transit != null)
+      err(e.line, `${e.rate.law}(...) on ${e.src}->${e.dest}: "${e.src}" has transit(${src.transit}), so its outflow must be expire() — a conveyor empties by age, not by rate`);
+  }
+  for (const [name, node] of model.nodes) {
+    if (node.transit == null) continue;
+    const outs = model.edges.filter(e => e.src === name && e.rate && e.rate.law === "expire");
+    if (outs.length === 0)
+      err(0, `node "${name}" has transit(${node.transit}) but no expire() outflow — nothing collects what finishes ageing`);
+    else if (outs.length > 1)
+      err(0, `node "${name}" has ${outs.length} expire() outflows — a conveyor discharges once`);
+  }
+
   return { model, errors, warnings };
 }
 
@@ -425,6 +454,26 @@ class Engine {
       else v0 = Math.max(0, v0);
       this.state.set(name, v0);
       this.observedMax.set(name, node.range ? node.range[1] : Math.max(10, Math.abs(v0)));
+    }
+    // CONVEYORS. A transit node's contents carry an age, held as slabs of uniform
+    // density over a window of CREATION time: {t0, t1, amt}. Ages are never stored
+    // (age = now - creation) and a bulk removal moves `scale` instead of every
+    // slab, so a substep costs O(1) however long the queue is. The node's value
+    // stays one number — scale * raw — which is why `repress(of = red_cells)` and
+    // every other law keep reading it with no idea it has an inside.
+    this.conveyors = new Map();
+    this.expiring = new Map();
+    for (const [name, node] of this.model.nodes) {
+      if (node.transit == null) continue;
+      const v0 = this.state.get(name);
+      // the steady state is a flat age distribution: one slab created evenly over
+      // the last T, so it discharges evenly over the next T. Loading it all at
+      // age 0 instead would fire the whole stock back out as a pulse at t = T.
+      this.conveyors.set(name, {
+        T: node.transit,
+        slabs: v0 > 0 ? [{ t0: -node.transit, t1: 0, amt: v0 }] : [],
+        head: 0, raw: v0, scale: 1,
+      });
     }
     this.lastFlows.clear();
     this.lastReactionRates.clear();
@@ -507,6 +556,15 @@ class Engine {
     else if (a.op === "-=") v -= a.value;
     if (node.range) v = Math.max(node.range[0], Math.min(node.range[1], v));
     else v = Math.max(0, v);
+    if (node.transit != null) {
+      // an event on a conveyor scales every cohort alike — phlebotomy draws blood
+      // of all ages, it does not skim the oldest. Ages are preserved, so what is
+      // left still finishes its 120 days on the original schedule.
+      const c = this.conveyors.get(a.node);
+      const cur = c.scale * c.raw;
+      if (cur > 1e-12) c.scale *= v / cur;
+      else { c.slabs = v > 0 ? [{ t0: this.t - c.T, t1: this.t, amt: v }] : []; c.head = 0; c.raw = v; c.scale = 1; }
+    }
     this.state.set(a.node, v);
     this.observedMax.set(a.node, Math.max(this.observedMax.get(a.node) || 0, v));
   }
@@ -525,6 +583,34 @@ class Engine {
       }
       this.eventState.set(ev.name, now);
     }
+  }
+
+  // mass whose age reaches T on or before `tEnd`. `take` mutates (the real
+  // discharge); otherwise it only peeks, so the rate can be read before any
+  // state moves and Euler still sees one consistent start-of-step world.
+  release(c, tEnd, take) {
+    let out = 0, i = c.head;
+    // substeps are not all the same width (advance() ends on a remainder), so
+    // more than one slab can finish in a single step — walk until one is unripe.
+    while (i < c.slabs.length) {
+      const sl = c.slabs[i];
+      const e0 = sl.t0 + c.T, e1 = sl.t1 + c.T;   // when this slab starts and finishes leaving
+      if (e0 >= tEnd) break;                      // its turn has not come
+      if (e1 <= tEnd) {                           // all of it is out
+        out += sl.amt;
+        if (take) c.raw -= sl.amt;
+        i++; continue;
+      }
+      const m = sl.amt * (tEnd - e0) / (e1 - e0); // part of it is out
+      out += m;
+      if (take) { sl.amt -= m; c.raw -= m; sl.t0 = tEnd - c.T; }
+      break;
+    }
+    if (take) {
+      c.head = i;                                 // drop by moving the head, not by shifting
+      if (c.head > 4096 && c.head * 2 > c.slabs.length) { c.slabs = c.slabs.slice(c.head); c.head = 0; }
+    }
+    return out * c.scale;
   }
 
   // value the rate law reads, defaulting 'of' to the edge source
@@ -562,6 +648,7 @@ class Engine {
       }
       case "adjust": return p.k * (p.target - this.readOf(edge));   // may be negative: a correction
       case "product": return p.k * this.readOf(edge) * this.readRef(p.by);   // k · of · by
+      case "expire":  return this.expiring.get(edge.src) || 0;   // set by the queue, not by a parameter
       default: return 0;
     }
   }
@@ -587,18 +674,49 @@ class Engine {
   }
 
   stepOnce(h) {
+    // what finishes ageing in this substep is a RATE the expire() law reads, so
+    // it has to be known before derivatives() runs.
+    for (const [name, c] of this.conveyors)
+      this.expiring.set(name, h > 1e-12 ? this.release(c, this.t + h, false) / h : 0);
+
     const net = this.derivatives();
     for (const [name, node] of this.model.nodes) {
+      if (node.transit != null) continue;        // conveyors advance in stepConveyors
       let v = this.state.get(name) + net.get(name) * h;
       if (node.range) v = Math.max(node.range[0], Math.min(node.range[1], v));
       else v = Math.max(0, v);
       this.state.set(name, v);
       this.observedMax.set(name, Math.max(this.observedMax.get(name), v));
     }
+    if (this.conveyors.size) this.stepConveyors(h);
     // events fire after the flows have moved the stocks for this substep, so a
     // guard catches its crossing the instant it happens (clean sawtooth teeth).
     if (this.model.events.length) this.fireEvents();
     this.t += h;
+  }
+
+  // discharge what has aged out, then admit this substep's inflow as a new slab.
+  // A conveyor is NOT clamped to its range: its value is the mass it holds, and
+  // silently clipping that would create or destroy blood.
+  stepConveyors(h) {
+    for (const [name, c] of this.conveyors) {
+      this.release(c, this.t + h, true);
+      let inflow = 0;
+      for (const e of this.activeEdges())
+        if (e.dest === name) inflow += (this.lastFlows.get(e.id) || 0);
+      const add = inflow * h;
+      if (add > 0) {
+        if (c.scale < 1e-9) {                     // renormalise before precision goes
+          for (let i = c.head; i < c.slabs.length; i++) c.slabs[i].amt *= c.scale;
+          c.raw *= c.scale; c.scale = 1;
+        }
+        c.slabs.push({ t0: this.t, t1: this.t + h, amt: add / c.scale });
+        c.raw += add / c.scale;
+      }
+      const v = Math.max(0, c.scale * c.raw);
+      this.state.set(name, v);
+      this.observedMax.set(name, Math.max(this.observedMax.get(name) || 0, v));
+    }
   }
 
   // advance by `dtModel` model-time units in small honest substeps

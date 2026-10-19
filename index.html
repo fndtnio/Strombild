@@ -285,6 +285,8 @@
           <option value="erythropv">red cells · polycythemia vera (one edge)</option>
           <option value="clonalescape">red cells · clonal escape (PV over a lifetime)</option>
           <option value="iron">red cells · iron, and what phlebotomy does</option>
+          <option value="cohort">red cells · a 120-day life (conveyor)</option>
+          <option value="mg25">red cells · magnesium-25 as a dial</option>
         </select>
         <button class="tiny" id="openBtn">open…</button>
         <button class="tiny" id="specBtn" title="language reference">spec</button>
@@ -1288,6 +1290,210 @@ event phlebotomy : red_cells >= 47 : red_cells -= 4
 
 pathway iron_cycle : plasma_iron->red_cells, red_cells->stores, stores->plasma_iron, diet->plasma_iron, stores->losses
 pathway gate       : liver->hepcidin, hepcidin->hep_clear, hepcidin->suppressed, membrane->ferroportin, ferroportin->degraded`,
+  cohort:
+`# red cells remember when they were born — a 120-day life, kept honestly
+#
+# This is \`erythropoiesis.strombild\` with ONE EDGE changed, and the change is not
+# to the biology. It is to an assumption that was hiding inside a rate law.
+#
+#     before:  red_cells -> spleen : proportional(of = red_cells, k = 0.00833)   # "a 120-day life"
+#     after:   node red_cells : ... transit(120)
+#              red_cells -> spleen : expire()
+#
+# \`proportional(k = 1/120)\` does NOT mean cells live 120 days. It means each cell
+# has a 1-in-120 chance of dying today regardless of its age — an exponential
+# whose MEAN is 120 days and whose most likely age at death is ZERO. Measured on
+# the chain it is worse than it sounds: mean 116, standard deviation 109, peak
+# outflow on day 0. Real red cells do not work that way. They are cleared by age,
+# at 115–120 days, with a fairly narrow spread. The old edge was a memoryless
+# stock wearing a lifespan's clothes.
+#
+# A conveyor fixes it. \`transit(120)\` makes this stock hold its contents for 120
+# days and then discharge them: what goes in on day 3 comes out on day 123, and
+# \`expire()\` is the edge that collects it. The node's VALUE is still a single
+# number — the total — which is why the kidney upstream still reads it with
+# \`repress(of = red_cells)\` and never needs to know the stock has an inside.
+#
+# WHY IT COULD NOT BE FAKED. The standard workaround is a chain of N ordinary
+# stocks (the linear-chain trick), which gives a spread of 1/sqrt(N): you need
+# 120 stages to get the standard deviation down to 11 days, and 240 to reach 8.
+# That is survivable as a file. What kills it is the loop: split red_cells into
+# 120 stages and the kidney can no longer see the hematocrit, because no rate law
+# in this language reads a SUM of nodes. The feedback physically cannot close.
+# That is what forced \`transit\`, and nothing smaller would have done.
+#
+# WHAT IT SHOWS. Start anemic (hematocrit 35, a flat age distribution — which is
+# what a bleed leaves, since bleeding takes all ages alike) and let the loop
+# recover. The marrow does its job: EPO rises, production runs hot, and the
+# hematocrit is back to normal inside a month. Then watch day 120.
+#
+#     day 120: 47.05     day 240: 46.95     day 364: 46.74     day 491: 46.49
+#     day 131: 42.14     day 266: 43.49     day 402: 44.11     day 538: 44.47
+#
+# The cohort that was over-produced to fix the anemia dies ALL AT ONCE, one
+# lifespan later, and the loop has to replace it — so the recovery echoes, at the
+# period of the red cell's life, ringing down over years. Eleven turning points
+# in 800 days. Run the same file with the old \`proportional\` edge and you get a
+# flat line: zero turning points, 45.40 for ever. The echo is not in the biology
+# we added. It was always in the biology; the memoryless stock could not hold it.
+#
+# This is delay-driven oscillation, the mechanism behind cyclic hematopoiesis —
+# a long fixed lag inside a negative feedback loop. It needs no new physics and
+# no new chemistry, only a stock that remembers an age.
+#
+# THE DIAL is \`transit\`. Shorten it and the echo speeds up and fades (the loop
+# corrects faster than the cohort ages). Lengthen it and the ring-down lasts
+# longer. Set it to the ~30 days of a transfused unit's remaining life and the
+# echo arrives in a month instead of four.
+#
+# What this does NOT claim: that the amplitude is right. It is ±2 hematocrit
+# points here, which is small, and it is damped rather than sustained — this loop
+# rings and settles, it does not cycle on its own. Whether a real marrow rings
+# this hard depends on the loop gain, on iron (\`iron.strombild\`, not coupled
+# here), and on the spread of real red-cell lifespan, which is narrow but not
+# zero and which a conveyor makes exactly zero. A conveyor is the opposite
+# simplification from an exponential: perfectly sharp instead of perfectly
+# memoryless. The truth is near one end, not in the middle, but it is not AT the
+# end. What this file claims is only that the echo exists and has a period, and
+# that the old edge could not produce it at any parameter value.
+
+node epo         : range(0, 400), init(10) @ bucket(fill = water)   # plasma erythropoietin, mU/mL
+node progenitors : range(0, 400), init(50) @ bucket(fill = dots)    # EPO-dependent erythroid precursors
+node red_cells   : range(0, 80),  init(35), transit(120) @ bucket(fill = water, threshold = 45)
+                                                                    # hematocrit %, starting anemic — a CONVEYOR: contents carry an age
+
+external kidney      # EPO source — the oxygen sensor
+external clearance   # EPO sink — receptor uptake and the liver
+external marrow      # stem cells committing to the red line
+external apoptosis   # progenitors that got no EPO
+external spleen      # red cells removed at the end of life
+
+kidney      -> epo         : repress(of = red_cells, max = 300, k = 35, n = 8)   # less oxygen, more EPO
+epo         -> clearance   : proportional(of = epo, k = 3.3)                      # half-life about five hours
+marrow      -> progenitors : constant(c = 50.4)                                   # commitment the loop does not control
+progenitors -> apoptosis   : proportional(of = progenitors, k = 1)                # the default fate
+progenitors -> red_cells   : product(of = progenitors, by = epo, k = 0.00075)     # survive and mature ONLY with EPO
+red_cells   -> spleen      : expire()                                             # cleared by AGE, not by chance
+
+pathway body : kidney->epo, epo->clearance, marrow->progenitors, progenitors->apoptosis, progenitors->red_cells, red_cells->spleen`,
+  mg25:
+`# magnesium-25 as a dial: what would the claim have to be worth?
+#
+# A collaborator proposes that the MAGNETIC ISOTOPE EFFECT reaches erythropoiesis:
+# 25Mg has nuclear spin 5/2 while 24Mg and 26Mg have none, so in a reaction running
+# through a radical pair, hyperfine coupling changes the branching and the rate.
+# Buchachenko's group reported ATP synthesis 2–3x faster with 25Mg. The proposal is
+# that shifting your isotope ratio shifts red-cell production, that the ratio is
+# then locked into the cell for 120 days, and that the whole thing beats out some
+# harmonic you could time a therapy to.
+#
+# THIS FILE TAKES NO VIEW ON WHETHER THE EFFECT IS REAL. It is built so that the
+# claim is a number you turn, and it answers one question the argument cannot:
+# how big would the effect have to be before a hematocrit meter could see it?
+# That question has an answer even while the physics is disputed.
+#
+#   (The physics is disputed. Buchachenko's positive results come essentially from
+#    one programme; the one serious independent replication — Crotty, Silkstone,
+#    Coey et al., PNAS 2012 — found no isotope effect on ATP production by creatine
+#    kinase and no field effect from 3 to 1000 mT. Treat E below as contested.)
+#
+# THE DIAL is E, the EXCESS ATP rate at pure 25Mg. E = 1.6 is the 260% claim.
+# The \`atp\` index must read 1.0 at natural abundance (f25 = 0.10) and 1+E at pure,
+# so the two constants below move together:
+#
+#     k = E / 0.9          c = 1 - 0.1 * E / 0.9
+#     E = 1.6  ->  k = 1.77777778   c = 0.82222222     <-- as written
+#     E = 0.5  ->  k = 0.55555556   c = 0.94444444
+#     E = 5.0  ->  k = 5.55555556   c = 0.44444444
+#
+# THE SECOND DIAL is \`target\` on the diet edge: the 25Mg fraction of the magnesium
+# reaching the marrow. This is the one that decides the argument.
+#
+# MEASURED, granting the claim in full (E = 1.6):
+#
+#     f25      how you would get there      atp      hematocrit   change
+#     0.1000   natural abundance            1.0000     45.400       —
+#     0.1003   diet, a generous 3 per mil   1.0005     45.403     +0.003
+#     0.1010   diet, an absurd 1 percent    1.0018     45.410     +0.010
+#     0.2000   an ENRICHED supplement       1.1778     46.316     +0.92
+#     0.5000   an ENRICHED supplement       1.7111     48.433     +3.03
+#     0.9000   near-pure 25Mg               2.4222     50.446     +5.05
+#
+# THE RESULT, and it is not the one either side expects. The claim does not have to
+# be wrong for the DIETARY story to fail. All magnesium in food and in ordinary
+# supplements sits at natural abundance, and biological magnesium fractionation is
+# a per-mil business — a sheep's feces run about 0.6 per mil off its diet. So "the
+# supplement I take today" moves f25 by well under a tenth of a percent, and the
+# model says that is +0.003 hematocrit points. A hematocrit is reproducible to
+# about half a point. The predicted effect is some 170x BELOW the noise floor of
+# the instrument you would measure it with. To drag diet up to a one-point change
+# you need E near 1600 — a 160,000% isotope effect, a thousand times the disputed
+# claim. The dietary route is dead on arithmetic, and no one has to win the
+# argument about radical pairs to kill it.
+#
+# THE SAME ARITHMETIC KEEPS THE OTHER ROUTE ALIVE, which is why this is worth
+# modelling rather than dismissing. An ENRICHED 25Mg supplement at 20% predicts
+# nearly a full hematocrit point, and at 50% predicts three. Those are not subtle.
+# That is a real, falsifiable, affordable experiment, and it is the experiment the
+# claim actually implies — not a diet study. Enriched 25Mg is a research chemical,
+# and it is in fact what Buchachenko's group proposed as a therapy.
+#
+# AND THE HARMONIC IS REAL, BUT IT IS NOT ISOTOPIC. Start the supplement at day 0
+# and the hematocrit does not climb smoothly to its new level. It overshoots and
+# rings, peaking at days 120, 243, 371, 502, 635, 768 — because the cohort the
+# supplement over-produced dies all at once, one red-cell lifespan later. Twelve
+# turning points. Delete \`transit(120)\`, put the old \`proportional(k = 0.00833)\`
+# back, and the ringing vanishes completely: zero turning points, a smooth climb
+# to the same endpoint. So the stepped cycle the proposal predicts is a real
+# prediction of the 120-day lifespan — see \`red-cell-cohort.strombild\` — and it
+# appears whatever moved production. Isotopes set the SIZE of the step. The
+# conveyor sets the RINGING. They are separable, and only one of them is disputed.
+#
+# What this does NOT claim: that the magnetic isotope effect is real; that ATP
+# supply limits erythropoiesis at all (if some other step is rate-limiting, every
+# number above collapses to zero — the same trap \`iron.strombild\` fell into); that
+# \`atp\` is a quantity of ATP rather than an index normalised to 1; that a linear
+# interpolation in f25 is the right shape for a spin effect; that 25Mg lodged in a
+# red cell does anything on the way back out, which is modelled here as nothing.
+# The model is a converter from a disputed claim to a measurable consequence. Its
+# job is to make the claim cost something.
+
+node epo         : range(0, 400),  init(10)   @ bucket(fill = water)    # plasma erythropoietin, mU/mL
+node progenitors : range(0, 400),  init(50)   @ bucket(fill = dots)     # EPO-dependent erythroid precursors
+node red_cells   : range(0, 80),   init(45), transit(120) @ bucket(fill = water, threshold = 50)
+                                                                        # hematocrit %, a CONVEYOR — cleared at 120 days by age
+node mg25        : range(0, 1),    init(0.10) @ bucket(fill = dots)     # 25Mg as a FRACTION of marrow magnesium (natural = 0.10)
+node atp         : range(0, 6),    init(1.0)  @ bucket(fill = squares)  # ATP synthesis rate INDEX, 1.0 at natural abundance
+node drive       : range(0, 3000), init(10)   @ bucket(fill = water)    # the maturation signal: EPO x ATP, equilibrating fast
+
+external kidney       # EPO source — the oxygen sensor
+external clearance    # EPO sink
+external marrow       # stem cells committing to the red line
+external apoptosis    # progenitors that got no signal
+external spleen       # red cells removed at the end of life
+external diet         # dietary magnesium, at whatever isotope ratio
+external base         # the spin-independent part of ATP synthesis
+external mie          # the magnetic isotope effect — the disputed part
+external use          # ATP consumption
+external epo_atp      # the two signals meeting
+external drive_clear  # and dispersing
+
+kidney      -> epo         : repress(of = red_cells, max = 300, k = 35, n = 8)
+epo         -> clearance   : proportional(of = epo, k = 3.3)
+marrow      -> progenitors : constant(c = 50.4)
+progenitors -> apoptosis   : proportional(of = progenitors, k = 1)
+progenitors -> red_cells   : product(of = progenitors, by = drive, k = 0.00075)   # matures on the COMBINED signal
+red_cells   -> spleen      : expire()                                             # cleared by age — this is what rings
+
+diet        -> mg25        : adjust(of = mg25, target = 0.10, k = 0.0333)   # <<< DIAL 2: the marrow tracks diet over ~30 days
+base        -> atp         : constant(c = 0.82222222)                       # <<< DIAL 1: c = 1 - 0.1 * E / 0.9
+mie         -> atp         : proportional(of = mg25, k = 1.77777778)        # <<< DIAL 1: k = E / 0.9
+atp         -> use         : proportional(of = atp, k = 1)
+epo_atp     -> drive       : product(of = epo, by = atp, k = 10)            # drive settles at epo x atp
+drive       -> drive_clear : proportional(of = drive, k = 10)
+
+pathway body  : kidney->epo, epo->clearance, marrow->progenitors, progenitors->apoptosis, progenitors->red_cells, red_cells->spleen
+pathway spin  : diet->mg25, base->atp, mie->atp, atp->use, epo_atp->drive, drive->drive_clear`,
 };
 
 /* ── permalink: the model travels in the URL ────────────────────────────────

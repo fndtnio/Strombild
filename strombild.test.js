@@ -1428,3 +1428,264 @@ test("clonal escape: the niche is conserved — drift returns share rather than 
   }
 });
 
+
+/* ---------------------------------------------------------------------
+ * CONVEYORS — transit(T) + expire(). A stock whose contents carry an age.
+ * ------------------------------------------------------------------- */
+const CONV = (extra = "") => `
+node cells : range(0, 80), init(45), transit(120) @ bucket(fill = water)
+external marrow
+external spleen
+marrow -> cells  : constant(c = 0.375)
+cells  -> spleen : expire()${extra}`;
+
+test("conveyor: a flat age distribution plus a matched inflow is an exact steady state", () => {
+  // init spreads the stock evenly over the last T, so it discharges evenly over
+  // the next T. Loaded at age 0 instead, the whole stock would fire back out as
+  // a pulse at t = T — the bug this default exists to prevent.
+  const { model } = ok(CONV());
+  const eng = new S.Engine(model);
+  for (let d = 0; d < 500; d++) {
+    eng.advance(1, 0.02);
+    assert.ok(near(eng.state.get("cells"), 45, 1e-6),
+      `day ${d + 1}: held ${eng.state.get("cells")}, want 45`);
+  }
+});
+
+test("conveyor: with the inflow cut, a flat stock drains dead straight and is empty at exactly T", () => {
+  const { model } = ok(`
+node cells : range(0, 80), init(45), transit(120) @ bucket(fill = water)
+external spleen
+cells -> spleen : expire()`);
+  const eng = new S.Engine(model);
+  const at = {};
+  for (let d = 1; d <= 130; d++) { eng.advance(1, 0.02); at[d] = eng.state.get("cells"); }
+  for (const d of [30, 60, 90]) assert.ok(near(at[d], 45 * (120 - d) / 120, 1e-6),
+    `linear drain at day ${d}: ${at[d].toFixed(4)} vs ${(45 * (120 - d) / 120).toFixed(4)}`);
+  assert.ok(at[119] > 0, "still holding the last cohort at 119");
+  assert.ok(near(at[120], 0, 1e-9), `empty at exactly T, got ${at[120]}`);
+  assert.ok(near(at[130], 0, 1e-9), "stays empty");
+});
+
+test("conveyor: nothing leaves before T — an exact delay, not a smeared one", () => {
+  // the linear-chain trick spreads a delay by 1/sqrt(N) and leaks from day 0.
+  const { model } = ok(`
+node cells : range(0, 400), init(0), transit(30) @ bucket(fill = dots)
+external src
+external out
+src   -> cells : constant(c = 10)
+cells -> out   : expire()`);
+  const eng = new S.Engine(model);
+  for (let d = 1; d <= 29; d++) {
+    eng.advance(1, 0.02);
+    assert.ok(near(eng.state.get("cells"), 10 * d, 1e-6),
+      `day ${d}: nothing may leave yet, held ${eng.state.get("cells")}`);
+  }
+  eng.advance(1, 0.02);
+  assert.ok(near(eng.state.get("cells"), 300, 1e-6), "full at T");
+  eng.advance(200, 0.02);
+  assert.ok(near(eng.state.get("cells"), 300, 1e-6), "and holds: in equals out");
+});
+
+test("conveyor: substep size does not change the answer", () => {
+  const read = sub => {
+    const { model } = ok(CONV());
+    const eng = new S.Engine(model);
+    for (let d = 0; d < 200; d++) eng.advance(1, sub);
+    return eng.state.get("cells");
+  };
+  // a remainder substep (1 / 0.03 is not whole) must not leak mass either
+  for (const sub of [0.05, 0.03, 0.01]) assert.ok(near(read(sub), 45, 1e-6),
+    `sub=${sub} gave ${read(sub)}`);
+});
+
+test("conveyor: an event scales every cohort alike and leaves their ages intact", () => {
+  // phlebotomy draws blood of all ages. What is left must still finish its 120
+  // days on the ORIGINAL schedule, not restart the clock.
+  const { model } = ok(`
+node cells : range(0, 80), init(45), transit(120) @ bucket(fill = water)
+external spleen
+cells -> spleen : expire()
+event draw : cells <= 40 : cells -= 10`);
+  const eng = new S.Engine(model);
+  const at = {};
+  for (let d = 1; d <= 120; d++) { eng.advance(1, 0.02); at[d] = eng.state.get("cells"); }
+  // the draw lands when the drain crosses 40, around day 13
+  assert.ok(at[30] < 33.75 - 6, `the draw happened: day 30 holds ${at[30].toFixed(3)}, undisturbed is 33.75`);
+  // AGES SURVIVE IT. Taking a share of every cohort leaves the schedule alone, so
+  // what remains is still aimed at zero on day 120 — a straight line through it.
+  // The ratio below is that line's slope, and it must not change after the draw,
+  // whatever substep the event happened to fire on.
+  const slope = d => at[d] / (120 - d);
+  assert.ok(near(slope(30), slope(60), 1e-6), `linear: ${slope(30)} vs ${slope(60)}`);
+  assert.ok(near(slope(60), slope(90), 1e-6), `linear: ${slope(60)} vs ${slope(90)}`);
+  assert.ok(near(at[120], 0, 1e-6),
+    `empty at exactly T, not T shifted by the draw: ${at[120]}`);
+});
+
+test("conveyor: mass is conserved — what went in came out, to the last drop", () => {
+  const { model } = ok(`
+node cells : range(0, 500), init(0), transit(40) @ bucket(fill = dots)
+node gone  : range(0, 5000), init(0) @ bucket(fill = water)
+external src
+src   -> cells : constant(c = 7)
+cells -> gone  : expire()`);
+  const eng = new S.Engine(model);
+  eng.advance(300, 0.02);
+  const held = eng.state.get("cells"), out = eng.state.get("gone");
+  assert.ok(near(held + out, 7 * 300, 1e-3),
+    `in 2100, accounted ${(held + out).toFixed(4)} (held ${held.toFixed(3)} + out ${out.toFixed(3)})`);
+});
+
+test("conveyor: the language refuses the two ways to misuse it", () => {
+  const bad = src => {
+    const r = S.parseModel(src);
+    assert.ok(r.errors.length > 0, "expected a parse error for:\n" + src);
+    return r.errors.map(e => e.msg).join(" | ");
+  };
+  // expire() needs a conveyor to discharge
+  assert.match(bad(`
+node plain : range(0, 10), init(5) @ bucket
+external out
+plain -> out : expire()`), /must be a node with transit/);
+  // a conveyor empties by age, so a rate law on its outflow is a contradiction
+  assert.match(bad(`
+node c : range(0, 10), init(5), transit(9) @ bucket
+external out
+c -> out : proportional(of = c, k = 0.1)`), /must be expire\(\)/);
+  // and something has to collect what finishes ageing
+  assert.match(bad(`
+node c : range(0, 10), init(5), transit(9) @ bucket`), /no expire\(\) outflow/);
+  // transit must be a positive time
+  assert.ok(S.parseModel(`node c : range(0, 10), init(5), transit(0) @ bucket`).errors.length > 0);
+});
+
+test("red-cell-cohort: the echo is real, and the memoryless edge cannot produce it", () => {
+  // The file's whole claim. A cohort over-produced to fix an anemia dies all at
+  // once one lifespan later, so the recovery rings at the period of a red cell's
+  // life. Swap the conveyor back for proportional(k = 1/120) and it goes flat.
+  const src = fs.readFileSync(path.join(DIR, "red-cell-cohort.strombild"), "utf8");
+  const trace = s => {
+    const { model } = ok(s);
+    const eng = new S.Engine(model);
+    const out = [];
+    for (let d = 1; d <= 800; d++) { eng.advance(1, 0.02); out.push(eng.state.get("red_cells")); }
+    return out;
+  };
+  const turns = a => {
+    let n = 0;
+    for (let i = 1; i < a.length - 1; i++)
+      if ((a[i] > a[i - 1] && a[i] > a[i + 1]) || (a[i] < a[i - 1] && a[i] < a[i + 1])) n++;
+    return n;
+  };
+  const coh = trace(src);
+  assert.ok(turns(coh) >= 8, `the cohort model rings, saw ${turns(coh)} turning points`);
+  // peaks land one red-cell lifespan apart, and the ring damps rather than grows
+  assert.ok(near(coh[119], 47.05, 0.1), `first echo peak at day 120: ${coh[119].toFixed(2)}`);
+  assert.ok(near(coh[239], 46.95, 0.1), `second at day 240: ${coh[239].toFixed(2)}`);
+  assert.ok(coh[239] < coh[119] && coh[490] < coh[239], "amplitude decays");
+
+  const mem = trace(src
+    .replace(", transit(120)", "")
+    .replace("red_cells   -> spleen      : expire()",
+             "red_cells   -> spleen      : proportional(of = red_cells, k = 0.00833)"));
+  assert.equal(turns(mem), 0, "the memoryless edge gives a flat line — no echo at any parameter");
+  assert.ok(near(mem[119], mem[799], 5e-3), "and it is settled well before the first echo would land");
+});
+
+/* ---------------------------------------------------------------------
+ * MG25 — a disputed claim turned into a measurable consequence.
+ * ------------------------------------------------------------------- */
+const MG = fs.readFileSync(path.join(DIR, "mg25-dial.strombild"), "utf8");
+const DIET = "adjust(of = mg25, target = 0.10, k = 0.0333)";
+// the two constants that carry the claim move together: k = E/0.9, c = 1 - 0.1E/0.9
+const claim = (src, E) => src
+  .replace("constant(c = 0.82222222)", `constant(c = ${(1 - 0.1 * E / 0.9).toFixed(10)})`)
+  .replace("proportional(of = mg25, k = 1.77777778)", `proportional(of = mg25, k = ${(E / 0.9).toFixed(10)})`);
+const diet = (src, f) => src.replace(DIET, `adjust(of = mg25, target = ${f}, k = 0.0333)`);
+function mgRun(src, { days = 3000 } = {}) {
+  const { model } = ok(src);
+  const eng = new S.Engine(model);
+  eng.advance(days, 0.02);
+  return { hct: eng.state.get("red_cells"), atp: eng.state.get("atp"), mg: eng.state.get("mg25") };
+}
+
+test("mg25: the ATP index is normalised — exactly 1.0 at natural abundance", () => {
+  // if this drifts, every hematocrit number in the header is measuring the
+  // normalisation rather than the isotope effect.
+  const r = mgRun(MG);
+  assert.ok(near(r.mg, 0.10, 1e-6), `marrow tracks the diet: ${r.mg}`);
+  assert.ok(near(r.atp, 1.0, 1e-6), `atp index at natural abundance: ${r.atp}`);
+  assert.ok(near(r.hct, 45.400, 0.01), `and the loop is unchanged from erythropoiesis: ${r.hct.toFixed(3)}`);
+  // the normalisation has to hold for ANY claim size, or the dial is not a dial
+  for (const E of [0.5, 1.6, 5.0]) {
+    const b = mgRun(claim(MG, E));
+    assert.ok(near(b.atp, 1.0, 1e-6), `E=${E} still reads 1.0 at natural abundance: ${b.atp}`);
+    assert.ok(near(b.hct, 45.400, 0.01), `E=${E} baseline hematocrit unmoved: ${b.hct.toFixed(3)}`);
+  }
+});
+
+test("mg25: granting the claim in full, DIET cannot reach the noise floor of a hematocrit", () => {
+  // The file's load-bearing result. A hematocrit is reproducible to about 0.5
+  // points; biological Mg fractionation is per-mil. Even an absurd 1% dietary
+  // shift stays two orders of magnitude under the instrument.
+  const base = mgRun(MG).hct;
+  const generous = mgRun(diet(MG, 0.1003)).hct;   // 3 per mil — more than biology does
+  const absurd   = mgRun(diet(MG, 0.101)).hct;    // 1 percent — not reachable at all
+  assert.ok(near(generous - base, 0.003, 0.001), `3 per mil moves +${(generous - base).toFixed(4)}`);
+  assert.ok(near(absurd - base, 0.010, 0.002), `1 percent moves +${(absurd - base).toFixed(4)}`);
+  assert.ok(generous - base < 0.5 / 100, "and that is far below what a hematocrit can resolve");
+});
+
+test("mg25: the same claim DOES predict a measurable effect from an enriched supplement", () => {
+  // The honest other half: the arithmetic that kills the diet keeps the real
+  // experiment alive, and names its dose.
+  const base = mgRun(MG).hct;
+  const e20 = mgRun(diet(MG, 0.20)).hct, e50 = mgRun(diet(MG, 0.50)).hct, e90 = mgRun(diet(MG, 0.90)).hct;
+  assert.ok(near(e20 - base, 0.92, 0.05), `20% enriched: +${(e20 - base).toFixed(3)}`);
+  assert.ok(near(e50 - base, 3.03, 0.05), `50% enriched: +${(e50 - base).toFixed(3)}`);
+  assert.ok(near(e90 - base, 5.05, 0.05), `90% enriched: +${(e90 - base).toFixed(3)}`);
+  assert.ok(e20 - base > 0.5, "20% clears the measurement floor — this is the experiment to run");
+});
+
+test("mg25: to make DIET matter the claim must grow about a thousandfold", () => {
+  for (const [E, want] of [[1.6, 0.003], [16, 0.030], [160, 0.291], [1600, 2.407]]) {
+    const src = claim(MG, E);
+    const d = mgRun(diet(src, 0.1003)).hct - mgRun(src).hct;
+    assert.ok(near(d, want, Math.max(0.002, want * 0.05)),
+      `E=${E}: diet moves ${d.toFixed(5)}, expected about ${want}`);
+  }
+});
+
+test("mg25: the ringing is the lifespan's, not the isotope's", () => {
+  // Turn the supplement on and the hematocrit overshoots and rings at the period
+  // of a red cell's life. Swap the conveyor out and the ringing goes, while the
+  // endpoint stays — so the harmonic belongs to transit(120), not to 25Mg.
+  const trace = src => {
+    const { model } = ok(src);
+    const eng = new S.Engine(model);
+    const out = [];
+    for (let d = 1; d <= 900; d++) { eng.advance(1, 0.02); out.push(eng.state.get("red_cells")); }
+    return out;
+  };
+  const turns = a => {
+    let n = 0;
+    for (let i = 1; i < a.length - 1; i++)
+      if ((a[i] > a[i - 1] && a[i] > a[i + 1]) || (a[i] < a[i - 1] && a[i] < a[i + 1])) n++;
+    return n;
+  };
+  const supp = diet(MG, 0.50);
+  const coh = trace(supp);
+  const mem = trace(supp
+    .replace(", transit(120)", "")
+    .replace("red_cells   -> spleen      : expire()",
+             "red_cells   -> spleen      : proportional(of = red_cells, k = 0.00833)"));
+  assert.ok(turns(coh) >= 8, `the conveyor rings: ${turns(coh)} turning points`);
+  assert.equal(turns(mem), 0, "the memoryless stock climbs smoothly: no harmonic at all");
+  // same destination, different journey — which is the whole point
+  assert.ok(near(coh[899 - 1], mem[899 - 1], 0.25),
+    `both land together: ${coh[898].toFixed(3)} vs ${mem[898].toFixed(3)}`);
+  // and the first overshoot lands one red-cell lifespan in
+  const firstPeak = coh.findIndex((v, i) => i > 0 && i < coh.length - 1 && v > coh[i - 1] && v > coh[i + 1]) + 1;
+  assert.ok(Math.abs(firstPeak - 120) <= 5, `first peak at day ${firstPeak}, want ~120`);
+});
