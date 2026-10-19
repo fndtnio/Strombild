@@ -1,0 +1,85 @@
+# red cells remember when they were born — a 120-day life, kept honestly
+#
+# This is `erythropoiesis.strombild` with ONE EDGE changed, and the change is not
+# to the biology. It is to an assumption that was hiding inside a rate law.
+#
+#     before:  red_cells -> spleen : proportional(of = red_cells, k = 0.00833)   # "a 120-day life"
+#     after:   node red_cells : ... transit(120)
+#              red_cells -> spleen : expire()
+#
+# `proportional(k = 1/120)` does NOT mean cells live 120 days. It means each cell
+# has a 1-in-120 chance of dying today regardless of its age — an exponential
+# whose MEAN is 120 days and whose most likely age at death is ZERO. Measured on
+# the chain it is worse than it sounds: mean 116, standard deviation 109, peak
+# outflow on day 0. Real red cells do not work that way. They are cleared by age,
+# at 115–120 days, with a fairly narrow spread. The old edge was a memoryless
+# stock wearing a lifespan's clothes.
+#
+# A conveyor fixes it. `transit(120)` makes this stock hold its contents for 120
+# days and then discharge them: what goes in on day 3 comes out on day 123, and
+# `expire()` is the edge that collects it. The node's VALUE is still a single
+# number — the total — which is why the kidney upstream still reads it with
+# `repress(of = red_cells)` and never needs to know the stock has an inside.
+#
+# WHY IT COULD NOT BE FAKED. The standard workaround is a chain of N ordinary
+# stocks (the linear-chain trick), which gives a spread of 1/sqrt(N): you need
+# 120 stages to get the standard deviation down to 11 days, and 240 to reach 8.
+# That is survivable as a file. What kills it is the loop: split red_cells into
+# 120 stages and the kidney can no longer see the hematocrit, because no rate law
+# in this language reads a SUM of nodes. The feedback physically cannot close.
+# That is what forced `transit`, and nothing smaller would have done.
+#
+# WHAT IT SHOWS. Start anemic (hematocrit 35, a flat age distribution — which is
+# what a bleed leaves, since bleeding takes all ages alike) and let the loop
+# recover. The marrow does its job: EPO rises, production runs hot, and the
+# hematocrit is back to normal inside a month. Then watch day 120.
+#
+#     day 120: 47.05     day 240: 46.95     day 364: 46.74     day 491: 46.49
+#     day 131: 42.14     day 266: 43.49     day 402: 44.11     day 538: 44.47
+#
+# The cohort that was over-produced to fix the anemia dies ALL AT ONCE, one
+# lifespan later, and the loop has to replace it — so the recovery echoes, at the
+# period of the red cell's life, ringing down over years. Eleven turning points
+# in 800 days. Run the same file with the old `proportional` edge and you get a
+# flat line: zero turning points, 45.40 for ever. The echo is not in the biology
+# we added. It was always in the biology; the memoryless stock could not hold it.
+#
+# This is delay-driven oscillation, the mechanism behind cyclic hematopoiesis —
+# a long fixed lag inside a negative feedback loop. It needs no new physics and
+# no new chemistry, only a stock that remembers an age.
+#
+# THE DIAL is `transit`. Shorten it and the echo speeds up and fades (the loop
+# corrects faster than the cohort ages). Lengthen it and the ring-down lasts
+# longer. Set it to the ~30 days of a transfused unit's remaining life and the
+# echo arrives in a month instead of four.
+#
+# What this does NOT claim: that the amplitude is right. It is ±2 hematocrit
+# points here, which is small, and it is damped rather than sustained — this loop
+# rings and settles, it does not cycle on its own. Whether a real marrow rings
+# this hard depends on the loop gain, on iron (`iron.strombild`, not coupled
+# here), and on the spread of real red-cell lifespan, which is narrow but not
+# zero and which a conveyor makes exactly zero. A conveyor is the opposite
+# simplification from an exponential: perfectly sharp instead of perfectly
+# memoryless. The truth is near one end, not in the middle, but it is not AT the
+# end. What this file claims is only that the echo exists and has a period, and
+# that the old edge could not produce it at any parameter value.
+
+node epo         : range(0, 400), init(10) @ bucket(fill = water)   # plasma erythropoietin, mU/mL
+node progenitors : range(0, 400), init(50) @ bucket(fill = dots)    # EPO-dependent erythroid precursors
+node red_cells   : range(0, 80),  init(35), transit(120) @ bucket(fill = water, threshold = 45)
+                                                                    # hematocrit %, starting anemic — a CONVEYOR: contents carry an age
+
+external kidney      # EPO source — the oxygen sensor
+external clearance   # EPO sink — receptor uptake and the liver
+external marrow      # stem cells committing to the red line
+external apoptosis   # progenitors that got no EPO
+external spleen      # red cells removed at the end of life
+
+kidney      -> epo         : repress(of = red_cells, max = 300, k = 35, n = 8)   # less oxygen, more EPO
+epo         -> clearance   : proportional(of = epo, k = 3.3)                      # half-life about five hours
+marrow      -> progenitors : constant(c = 50.4)                                   # commitment the loop does not control
+progenitors -> apoptosis   : proportional(of = progenitors, k = 1)                # the default fate
+progenitors -> red_cells   : product(of = progenitors, by = epo, k = 0.00075)     # survive and mature ONLY with EPO
+red_cells   -> spleen      : expire()                                             # cleared by AGE, not by chance
+
+pathway body : kidney->epo, epo->clearance, marrow->progenitors, progenitors->apoptosis, progenitors->red_cells, red_cells->spleen

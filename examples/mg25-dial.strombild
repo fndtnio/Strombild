@@ -1,0 +1,61 @@
+# magnesium-25 as a dial
+#
+# THE DIAL is E, the EXCESS ATP rate at pure 25Mg. E = 1.6 is the 260% claim.
+# The `atp` index must read 1.0 at natural abundance (f25 = 0.10) and 1+E at pure,
+# so the two constants below move together:
+#
+#     k = E / 0.9          c = 1 - 0.1 * E / 0.9
+#     E = 1.6  ->  k = 1.77777778   c = 0.82222222     <-- as written
+#     E = 0.5  ->  k = 0.55555556   c = 0.94444444
+#     E = 5.0  ->  k = 5.55555556   c = 0.44444444
+#
+# THE SECOND DIAL is `target` on the diet edge: the 25Mg fraction of the magnesium
+# reaching the marrow. This is the one that decides the argument.
+#
+# MEASURED, granting the claim in full (E = 1.6):
+#
+#     f25      how you would get there      atp      hematocrit   change
+#     0.1000   natural abundance            1.0000     45.400       —
+#     0.1003   diet, a generous 3 per mil   1.0005     45.403     +0.003
+#     0.1010   diet, an absurd 1 percent    1.0018     45.410     +0.010
+#     0.2000   an ENRICHED supplement       1.1778     46.316     +0.92
+#     0.5000   an ENRICHED supplement       1.7111     48.433     +3.03
+#     0.9000   near-pure 25Mg               2.4222     50.446     +5.05
+#
+
+node epo         : range(0, 400),  init(10)   @ bucket(fill = water)    # plasma erythropoietin, mU/mL
+node progenitors : range(0, 400),  init(50)   @ bucket(fill = dots)     # EPO-dependent erythroid precursors
+node red_cells   : range(0, 80),   init(45), transit(120) @ bucket(fill = water, threshold = 50)
+                                                                        # hematocrit %, a CONVEYOR — cleared at 120 days by age
+node mg25        : range(0, 1),    init(0.10) @ bucket(fill = dots)     # 25Mg as a FRACTION of marrow magnesium (natural = 0.10)
+node atp         : range(0, 6),    init(1.0)  @ bucket(fill = squares)  # ATP synthesis rate INDEX, 1.0 at natural abundance
+node drive       : range(0, 3000), init(10)   @ bucket(fill = water)    # the maturation signal: EPO x ATP, equilibrating fast
+
+external kidney       # EPO source — the oxygen sensor
+external clearance    # EPO sink
+external marrow       # stem cells committing to the red line
+external apoptosis    # progenitors that got no signal
+external spleen       # red cells removed at the end of life
+external diet         # dietary magnesium, at whatever isotope ratio
+external base         # the spin-independent part of ATP synthesis
+external mie          # the magnetic isotope effect — the disputed part
+external use          # ATP consumption
+external epo_atp      # the two signals meeting
+external drive_clear  # and dispersing
+
+kidney      -> epo         : repress(of = red_cells, max = 300, k = 35, n = 8)
+epo         -> clearance   : proportional(of = epo, k = 3.3)
+marrow      -> progenitors : constant(c = 50.4)
+progenitors -> apoptosis   : proportional(of = progenitors, k = 1)
+progenitors -> red_cells   : product(of = progenitors, by = drive, k = 0.00075)   # matures on the COMBINED signal
+red_cells   -> spleen      : expire()                                             # cleared by age — this is what rings
+
+diet        -> mg25        : adjust(of = mg25, target = 0.10, k = 0.0333)   # <<< DIAL 2: the marrow tracks diet over ~30 days
+base        -> atp         : constant(c = 0.82222222)                       # <<< DIAL 1: c = 1 - 0.1 * E / 0.9
+mie         -> atp         : proportional(of = mg25, k = 1.77777778)        # <<< DIAL 1: k = E / 0.9
+atp         -> use         : proportional(of = atp, k = 1)
+epo_atp     -> drive       : product(of = epo, by = atp, k = 10)            # drive settles at epo x atp
+drive       -> drive_clear : proportional(of = drive, k = 10)
+
+pathway body  : kidney->epo, epo->clearance, marrow->progenitors, progenitors->apoptosis, progenitors->red_cells, red_cells->spleen
+pathway spin  : diet->mg25, base->atp, mie->atp, atp->use, epo_atp->drive, drive->drive_clear
